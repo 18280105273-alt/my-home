@@ -83,6 +83,53 @@
       score: 220,
       shots: 1,
     },
+    ricochet: {
+      name: "弹跳炮坦克",
+      maxHealth: 86,
+      speed: 104,
+      radius: 23,
+      damage: 12,
+      fireDelay: 1.58,
+      bulletSpeed: 470,
+      desiredRange: 480,
+      color: "#58a7c9",
+      score: 280,
+      shots: 1,
+      attackType: "ricochet",
+      bounces: 2,
+    },
+    laser: {
+      name: "激光坦克",
+      maxHealth: 96,
+      speed: 88,
+      radius: 25,
+      damage: 24,
+      fireDelay: 2.35,
+      bulletSpeed: 0,
+      desiredRange: 560,
+      color: "#b86ed6",
+      score: 390,
+      shots: 0,
+      attackType: "laser",
+      chargeTime: 0.82,
+      beamRange: 980,
+    },
+    seeker: {
+      name: "追踪炮坦克",
+      maxHealth: 78,
+      speed: 122,
+      radius: 22,
+      damage: 15,
+      fireDelay: 2.15,
+      bulletSpeed: 315,
+      desiredRange: 620,
+      color: "#7fc76b",
+      score: 350,
+      shots: 1,
+      attackType: "homing",
+      turnRate: 2.4,
+      homingDuration: 2.4,
+    },
     heavy: {
       name: "重型坦克",
       maxHealth: 170,
@@ -210,6 +257,57 @@
         player.waveHealBonus += 18;
       },
     },
+    {
+      id: "ricochet-shell",
+      name: "弹跳弹头",
+      icon: "弹",
+      rarity: "rare",
+      description: "主炮炮弹可在障碍和边界上反弹，最多叠加三层。",
+      apply() {
+        player.ricochetShots = Math.min(3, player.ricochetShots + 1);
+      },
+    },
+    {
+      id: "homing-shell",
+      name: "追踪炮",
+      icon: "锁",
+      rarity: "epic",
+      description: "主炮炮弹会自动转向追踪最近敌军，叠加后转向更快。",
+      apply() {
+        player.homingShots += 1;
+      },
+    },
+    {
+      id: "auxiliary-laser",
+      name: "激光副炮",
+      icon: "光",
+      rarity: "epic",
+      description: "周期性自动锁定并发射激光，叠加后提高伤害与射速。",
+      apply() {
+        player.auxLaserLevel += 1;
+        player.auxLaserTimer = Math.min(player.auxLaserTimer, 0.6);
+      },
+    },
+    {
+      id: "explosive-shell",
+      name: "爆裂弹",
+      icon: "爆",
+      rarity: "rare",
+      description: "主炮命中或撞墙时产生爆炸，对周围敌军造成范围伤害。",
+      apply() {
+        player.explosiveShots += 1;
+      },
+    },
+    {
+      id: "scatter-shot",
+      name: "散射炮管",
+      icon: "散",
+      rarity: "standard",
+      description: "每次主炮射击额外发射一发散射炮弹。",
+      apply() {
+        player.extraProjectiles += 1;
+      },
+    },
   ];
 
   const keys = new Set();
@@ -223,6 +321,7 @@
   let player;
   let enemies = [];
   let bullets = [];
+  let beams = [];
   let particles = [];
   let pickups = [];
   let obstacles = [];
@@ -234,6 +333,7 @@
   let intermission = 2.8;
   let spawnClock = 0;
   let pendingBuffChoices = [];
+  let arenaLayoutIndex = 0;
   let messageTimer = 0;
   let lastTime = performance.now();
   let elapsed = 0;
@@ -332,6 +432,10 @@
       this.tone(180, 0.4, "sine", 0.055, 42);
     }
 
+    laser() {
+      this.tone(880, 0.24, "sawtooth", 0.035, 180);
+    }
+
     wave() {
       this.tone(330, 0.16, "triangle", 0.035, 440);
       window.setTimeout(() => this.tone(440, 0.2, "triangle", 0.03, 660), 120);
@@ -368,44 +472,66 @@
       { x: 2100, y: 1420, w: 190, h: 78, type: "wall" },
     ];
 
-    const centerBlocks = [
-      { x: 650, y: 620, w: 210, h: 68, type: "concrete" },
-      { x: 1010, y: 530, w: 78, h: 210, type: "concrete" },
-      { x: 1340, y: 620, w: 210, h: 68, type: "concrete" },
-      { x: 1080, y: 900, w: 230, h: 70, type: "concrete" },
-      { x: 770, y: 930, w: 78, h: 210, type: "concrete" },
-      { x: 1510, y: 930, w: 78, h: 210, type: "concrete" },
-      { x: 950, y: 770, w: 78, h: 78, type: "concrete" },
-      { x: 1370, y: 770, w: 78, h: 78, type: "concrete" },
+    const layouts = [
+      () => [
+        { x: 1080, y: 420, w: 76, h: 220, type: "concrete" },
+        { x: 1080, y: 960, w: 76, h: 220, type: "concrete" },
+        { x: 710, y: 760, w: 260, h: 72, type: "concrete" },
+        { x: 1430, y: 760, w: 260, h: 72, type: "concrete" },
+        { x: 930, y: 640, w: 72, h: 140, type: "wall" },
+        { x: 1398, y: 820, w: 72, h: 140, type: "wall" },
+      ],
+      () => [
+        { x: 1080, y: 490, w: 240, h: 72, type: "concrete" },
+        { x: 1080, y: 1038, w: 240, h: 72, type: "concrete" },
+        { x: 820, y: 670, w: 72, h: 260, type: "concrete" },
+        { x: 1508, y: 670, w: 72, h: 260, type: "concrete" },
+        { x: 920, y: 650, w: 120, h: 64, type: "wall" },
+        { x: 1360, y: 886, w: 120, h: 64, type: "wall" },
+        { x: 1360, y: 650, w: 120, h: 64, type: "wall" },
+        { x: 920, y: 886, w: 120, h: 64, type: "wall" },
+      ],
+      () => [
+        { x: 520, y: 560, w: 360, h: 72, type: "concrete" },
+        { x: 1120, y: 560, w: 360, h: 72, type: "concrete" },
+        { x: 920, y: 780, w: 72, h: 300, type: "concrete" },
+        { x: 1408, y: 780, w: 72, h: 300, type: "concrete" },
+        { x: 520, y: 980, w: 360, h: 72, type: "concrete" },
+        { x: 1120, y: 980, w: 360, h: 72, type: "concrete" },
+      ],
+      () =>
+        Array.from({ length: 11 }, (_, index) => {
+          const horizontal = index % 3 === 0;
+          const w = horizontal ? randomRange(130, 250) : randomRange(64, 100);
+          const h = horizontal ? randomRange(64, 100) : randomRange(130, 250);
+          const zoneX = 430 + (index % 4) * 410;
+          const zoneY = 440 + Math.floor(index / 4) * 360;
+          return {
+            x: clamp(zoneX + randomRange(-70, 70), 260, WORLD.width - w - 180),
+            y: clamp(zoneY + randomRange(-50, 50), 260, WORLD.height - h - 180),
+            w,
+            h,
+            type: index % 2 === 0 ? "concrete" : "wall",
+          };
+        }),
+      () => [
+        { x: 880, y: 560, w: 72, h: 190, type: "wall" },
+        { x: 1448, y: 560, w: 72, h: 190, type: "wall" },
+        { x: 880, y: 870, w: 72, h: 190, type: "wall" },
+        { x: 1448, y: 870, w: 72, h: 190, type: "wall" },
+        { x: 1040, y: 760, w: 320, h: 72, type: "concrete" },
+        { x: 760, y: 760, w: 120, h: 72, type: "concrete" },
+        { x: 1520, y: 760, w: 120, h: 72, type: "concrete" },
+      ],
     ];
 
-    obstacles.push(...borderBlocks, ...centerBlocks);
+    const nextLayout = Math.floor(Math.random() * layouts.length);
+    arenaLayoutIndex = nextLayout === arenaLayoutIndex
+      ? (nextLayout + 1 + Math.floor(Math.random() * (layouts.length - 1))) % layouts.length
+      : nextLayout;
+    obstacles.push(...borderBlocks, ...layouts[arenaLayoutIndex]());
 
-    const randomBlocks = [
-      { minX: 250, maxX: 560, minY: 260, maxY: 620 },
-      { minX: 1820, maxX: 2140, minY: 260, maxY: 620 },
-      { minX: 250, maxX: 580, minY: 960, maxY: 1270 },
-      { minX: 1810, maxX: 2140, minY: 960, maxY: 1270 },
-      { minX: 650, maxX: 900, minY: 250, maxY: 500 },
-      { minX: 1500, maxX: 1780, minY: 270, maxY: 530 },
-      { minX: 1600, maxX: 1880, minY: 1060, maxY: 1250 },
-      { minX: 600, maxX: 880, minY: 1080, maxY: 1260 },
-    ];
-
-    randomBlocks.forEach((zone, index) => {
-      const horizontal = index % 2 === 0;
-      const w = horizontal ? randomRange(120, 200) : randomRange(64, 88);
-      const h = horizontal ? randomRange(64, 88) : randomRange(120, 200);
-      obstacles.push({
-        x: randomRange(zone.minX, zone.maxX - w),
-        y: randomRange(zone.minY, zone.maxY - h),
-        w,
-        h,
-        type: index % 3 === 0 ? "concrete" : "wall",
-      });
-    });
-
-    for (let i = 0; i < 76; i += 1) {
+    for (let i = 0; i < 94; i += 1) {
       scenery.push({
         x: randomRange(70, WORLD.width - 70),
         y: randomRange(70, WORLD.height - 70),
@@ -414,6 +540,7 @@
         kind: i % 3,
       });
     }
+    arena.dataset.layout = String(arenaLayoutIndex + 1);
   }
 
   function createPlayer() {
@@ -450,6 +577,12 @@
       shockwaveRadiusMultiplier: 1,
       shockwaveDamageMultiplier: 1,
       waveHealBonus: 0,
+      ricochetShots: 0,
+      homingShots: 0,
+      auxLaserLevel: 0,
+      auxLaserTimer: 1.2,
+      explosiveShots: 0,
+      extraProjectiles: 0,
       buffLevels: {},
       buffCount: 0,
     };
@@ -481,6 +614,8 @@
       elite,
       muzzleFlash: 0,
       hitFlash: 0,
+      laserCharge: 0,
+      laserAngle: angle,
       strafeDirection: Math.random() > 0.5 ? 1 : -1,
       strafeTimer: randomRange(1.2, 2.8),
       spawnTimer: 0.75,
@@ -491,8 +626,12 @@
   function resetGame() {
     createArena();
     player = createPlayer();
+    const spawn = findSafePlayerSpawn();
+    player.x = spawn.x;
+    player.y = spawn.y;
     enemies = [];
     bullets = [];
+    beams = [];
     particles = [];
     pickups = [];
     spawnQueue = [];
@@ -622,12 +761,13 @@
     player.buffLevels[buff.id] = (player.buffLevels[buff.id] || 0) + 1;
     player.buffCount += 1;
     buffOverlay.classList.remove("visible");
+    rebuildArenaForNextWave();
     gameState = "playing";
     intermission = 4;
     lastTime = performance.now();
     updateHud();
     updateAmmoPips();
-    showMessage(`${buff.name} 已装备`, 1.8);
+    showMessage(`${buff.name} 已装备 · 地图重构`, 2);
   }
 
   function resizeCanvas() {
@@ -685,6 +825,49 @@
 
     const nextY = tank.y + dy;
     if (!tankCollides(tank.x, nextY, tank.radius)) tank.y = nextY;
+  }
+
+  function findSafePlayerSpawn() {
+    const preferred = [
+      { x: WORLD.width / 2, y: WORLD.height / 2 },
+      { x: WORLD.width / 2 + 260, y: WORLD.height / 2 },
+      { x: WORLD.width / 2 - 260, y: WORLD.height / 2 },
+      { x: WORLD.width / 2, y: WORLD.height / 2 + 250 },
+      { x: WORLD.width / 2, y: WORLD.height / 2 - 250 },
+    ];
+
+    const preferredSpawn = preferred.find(
+      (point) => !tankCollides(point.x, point.y, 30)
+    );
+    if (preferredSpawn) return preferredSpawn;
+
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = randomRange(80, 430);
+      const point = {
+        x: clamp(WORLD.width / 2 + Math.cos(angle) * radius, 80, WORLD.width - 80),
+        y: clamp(WORLD.height / 2 + Math.sin(angle) * radius, 80, WORLD.height - 80),
+      };
+      if (!tankCollides(point.x, point.y, 30)) return point;
+    }
+
+    return { x: 160, y: 160 };
+  }
+
+  function rebuildArenaForNextWave() {
+    createArena();
+    const spawn = findSafePlayerSpawn();
+    player.x = spawn.x;
+    player.y = spawn.y;
+    player.vx = 0;
+    player.vy = 0;
+    player.invulnerable = 1.5;
+    bullets = [];
+    beams = [];
+    pickups = [];
+    camera.x = player.x;
+    camera.y = player.y;
+    createRing(player.x, player.y, 110, "#79e2d3", 0.7, 5);
   }
 
   function lineIntersectsRect(x1, y1, x2, y2, rect, padding = 0) {
@@ -746,18 +929,35 @@
     const difficulty = getDifficulty(wave);
     const scoutCount = 2 + Math.floor(wave * 0.9);
     const gunnerCount = wave >= 2 ? 1 + Math.floor(wave * 0.5) : 0;
+    const ricochetCount = wave >= 3 ? 1 + Math.floor((wave - 3) / 2) : 0;
     const heavyCount = wave >= 4 ? 1 + Math.floor((wave - 4) / 3) : 0;
+    const laserCount = wave >= 5 ? 1 + Math.floor((wave - 5) / 3) : 0;
+    const seekerCount = wave >= 7 ? 1 + Math.floor((wave - 7) / 3) : 0;
 
     for (let i = 0; i < scoutCount; i += 1) spawnQueue.push({ type: "scout", time: i * 0.24 });
     for (let i = 0; i < gunnerCount; i += 1) spawnQueue.push({ type: "gunner", time: 0.8 + i * 0.46 });
+    for (let i = 0; i < ricochetCount; i += 1) spawnQueue.push({ type: "ricochet", time: 1.25 + i * 0.58 });
     for (let i = 0; i < heavyCount; i += 1) spawnQueue.push({ type: "heavy", time: 1.9 + i * 0.72 });
+    for (let i = 0; i < laserCount; i += 1) spawnQueue.push({ type: "laser", time: 2.35 + i * 0.82 });
+    for (let i = 0; i < seekerCount; i += 1) spawnQueue.push({ type: "seeker", time: 2.8 + i * 0.74 });
 
     spawnQueue.sort((a, b) => a.time - b.time);
     spawnClock = 0;
     waveLabel.textContent = `第 ${wave} 波`;
     waveTimer.textContent = String(spawnQueue.length).padStart(2, "0");
     difficultyLabel.textContent = `威胁 x${difficulty.multiplier.toFixed(1)}`;
-    showMessage(`第 ${wave} 波 · 威胁 x${difficulty.multiplier.toFixed(1)}`, 1.8);
+    const weaponIntel =
+      wave === 3
+        ? " · 弹跳炮入场"
+        : wave === 5
+          ? " · 激光炮入场"
+          : wave === 7
+            ? " · 追踪炮入场"
+            : "";
+    showMessage(
+      `第 ${wave} 波 · 威胁 x${difficulty.multiplier.toFixed(1)}${weaponIntel}`,
+      2.2
+    );
     sound.wave();
   }
 
@@ -855,6 +1055,11 @@
     const wantsToFire = pointer.down || keys.has("KeyJ") || (aimStick.active && Math.hypot(aimStick.x, aimStick.y) > 0.42);
     if (wantsToFire) firePlayerCannon();
 
+    if (player.auxLaserLevel > 0) {
+      player.auxLaserTimer -= dt;
+      if (player.auxLaserTimer <= 0) firePlayerAuxiliaryLaser();
+    }
+
     player.energy = Math.min(
       player.maxEnergy,
       player.energy + 11 * player.energyRegenMultiplier * dt
@@ -869,31 +1074,48 @@
     }
 
     const spread = player.overdrive > 0 ? 0.018 : 0.035;
-    const angle = player.turretAngle + randomRange(-spread, spread);
-    const muzzleX = player.x + Math.cos(angle) * (player.radius + 19);
-    const muzzleY = player.y + Math.sin(angle) * (player.radius + 19);
     const speed = (player.overdrive > 0 ? 760 : 690) * player.bulletSpeedMultiplier;
     const baseDamage = player.overdrive > 0 ? 48 : 38;
-    bullets.push({
-      x: muzzleX,
-      y: muzzleY,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      radius: 5 + player.bulletRadiusBonus,
-      damage: baseDamage * player.damageMultiplier,
-      owner: "player",
-      life: 1.5,
-      color: COLORS.bullet,
-      glow: "#fff1b2",
-    });
+    const projectileCount = 1 + player.extraProjectiles;
+    let muzzleX = player.x;
+    let muzzleY = player.y;
+    let lastAngle = player.turretAngle;
+
+    for (let index = 0; index < projectileCount; index += 1) {
+      const scatterOffset = (index - (projectileCount - 1) / 2) * 0.075;
+      const angle =
+        player.turretAngle +
+        scatterOffset +
+        randomRange(-spread, spread);
+      lastAngle = angle;
+      muzzleX = player.x + Math.cos(angle) * (player.radius + 19);
+      muzzleY = player.y + Math.sin(angle) * (player.radius + 19);
+      bullets.push({
+        x: muzzleX,
+        y: muzzleY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: 5 + player.bulletRadiusBonus,
+        damage: baseDamage * player.damageMultiplier,
+        owner: "player",
+        life: 1.65,
+        color: COLORS.bullet,
+        glow: "#fff1b2",
+        behavior: player.homingShots > 0 ? "homing" : "straight",
+        bounces: player.ricochetShots,
+        homingStrength: 2.7 + player.homingShots * 1.15,
+        homingDuration: 1.25 + player.homingShots * 0.35,
+        explosive: player.explosiveShots > 0,
+      });
+    }
 
     player.magazine -= 1;
     const fireDelay = player.overdrive > 0 ? player.fireDelay * 0.62 : player.fireDelay;
     player.fireTimer = fireDelay / player.fireRateMultiplier;
     player.muzzleFlash = 0.08;
-    player.vx -= Math.cos(angle) * 13;
-    player.vy -= Math.sin(angle) * 13;
-    createMuzzleParticles(muzzleX, muzzleY, angle, COLORS.bullet);
+    player.vx -= Math.cos(lastAngle) * 13;
+    player.vy -= Math.sin(lastAngle) * 13;
+    createMuzzleParticles(muzzleX, muzzleY, lastAngle, COLORS.bullet);
     updateAmmoPips();
     sound.shot();
 
@@ -904,6 +1126,72 @@
     if (player.reloadTimer > 0 || player.magazine === player.magazineSize) return;
     player.reloadTimer = 1.18 * player.reloadMultiplier;
     showMessage("自动装填", 0.85);
+  }
+
+  function findNearestVisibleEnemy(maxRange) {
+    let nearest = null;
+    let nearestDistance = maxRange;
+    enemies.forEach((enemy) => {
+      if (enemy.spawnTimer > 0) return;
+      const enemyDistance = distance(enemy, player);
+      if (enemyDistance < nearestDistance && hasLineOfSight(player, enemy)) {
+        nearest = enemy;
+        nearestDistance = enemyDistance;
+      }
+    });
+    return nearest;
+  }
+
+  function getBeamLength(origin, angle, maxRange) {
+    const step = 14;
+    for (let travelled = step; travelled <= maxRange; travelled += step) {
+      const x = origin.x + Math.cos(angle) * travelled;
+      const y = origin.y + Math.sin(angle) * travelled;
+      if (
+        x < 28 ||
+        y < 28 ||
+        x > WORLD.width - 28 ||
+        y > WORLD.height - 28 ||
+        obstacles.some((obstacle) => circleIntersectsRect(x, y, 4, obstacle))
+      ) {
+        return travelled;
+      }
+    }
+    return maxRange;
+  }
+
+  function firePlayerAuxiliaryLaser() {
+    const target = findNearestVisibleEnemy(960);
+    if (!target) {
+      player.auxLaserTimer = 0.45;
+      return;
+    }
+
+    const angle = Math.atan2(target.y - player.y, target.x - player.x);
+    const length = getBeamLength(player, angle, 980);
+    beams.push({
+      owner: "player",
+      x: player.x + Math.cos(angle) * (player.radius + 18),
+      y: player.y + Math.sin(angle) * (player.radius + 18),
+      angle,
+      length,
+      life: 0.2,
+      maxLife: 0.2,
+      color: "#79e2d3",
+      coreColor: "#e8fffb",
+      width: 4 + player.auxLaserLevel,
+    });
+    damageEnemy(
+      target,
+      34 * player.auxLaserLevel * player.damageMultiplier,
+      angle,
+      95
+    );
+    player.auxLaserTimer = Math.max(
+      0.75,
+      2.8 - (player.auxLaserLevel - 1) * 0.35
+    );
+    sound.laser();
   }
 
   function useShockwave() {
@@ -975,7 +1263,12 @@
       const lookAngle = canSeePlayer ? targetAngle : movementAngle;
       enemy.turretAngle = lerpAngle(enemy.turretAngle, lookAngle, Math.min(1, 8 * dt));
 
-      const speedScale = Math.abs(rangeError) < 58 ? 0.82 : 1;
+      const speedScale =
+        enemy.type.attackType === "laser" && enemy.laserCharge > 0
+          ? 0.42
+          : Math.abs(rangeError) < 58
+            ? 0.82
+            : 1;
       const moveSpeed = enemy.type.speed * speedScale * enemy.speedMultiplier;
       moveTank(
         enemy,
@@ -983,7 +1276,9 @@
         Math.sin(enemy.bodyAngle) * moveSpeed * dt
       );
 
-      if (
+      if (enemy.type.attackType === "laser") {
+        updateEnemyLaser(enemy, dt, targetAngle, canSeePlayer, dist);
+      } else if (
         canSeePlayer &&
         dist < 840 &&
         enemy.fireTimer <= 0 &&
@@ -997,6 +1292,72 @@
         moveTank(enemy, Math.cos(pushAngle) * 95 * dt, Math.sin(pushAngle) * 95 * dt);
       }
     });
+  }
+
+  function updateEnemyLaser(enemy, dt, targetAngle, canSeePlayer, targetDistance) {
+    if (enemy.laserCharge > 0) {
+      enemy.laserCharge -= dt;
+      enemy.laserAngle = lerpAngle(
+        enemy.laserAngle,
+        targetAngle,
+        Math.min(1, 2.8 * dt)
+      );
+      if (enemy.laserCharge <= 0) fireEnemyLaser(enemy);
+      return;
+    }
+
+    if (
+      canSeePlayer &&
+      targetDistance < enemy.type.beamRange &&
+      enemy.fireTimer <= 0 &&
+      Math.abs(lerpAngle(enemy.turretAngle, targetAngle, 1) - targetAngle) < 0.16
+    ) {
+      enemy.laserCharge = enemy.type.chargeTime;
+      enemy.laserAngle = enemy.turretAngle;
+      enemy.fireTimer = 999;
+      createRing(enemy.x, enemy.y, 62, enemy.type.color, enemy.type.chargeTime, 3);
+    }
+  }
+
+  function fireEnemyLaser(enemy) {
+    const angle = enemy.laserAngle;
+    const length = getBeamLength(enemy, angle, enemy.type.beamRange);
+    beams.push({
+      owner: "enemy",
+      x: enemy.x + Math.cos(angle) * (enemy.radius + 17),
+      y: enemy.y + Math.sin(angle) * (enemy.radius + 17),
+      angle,
+      length,
+      life: 0.24,
+      maxLife: 0.24,
+      color: enemy.type.color,
+      coreColor: "#fff3ff",
+      width: enemy.elite ? 7 : 5,
+    });
+
+    const directionX = Math.cos(angle);
+    const directionY = Math.sin(angle);
+    const toPlayerX = player.x - enemy.x;
+    const toPlayerY = player.y - enemy.y;
+    const forwardDistance = toPlayerX * directionX + toPlayerY * directionY;
+    const perpendicularDistance = Math.abs(
+      toPlayerX * directionY - toPlayerY * directionX
+    );
+    if (
+      forwardDistance > 0 &&
+      forwardDistance < length &&
+      perpendicularDistance < player.radius + 8 &&
+      hasLineOfSight(enemy, player)
+    ) {
+      damagePlayer(enemy.type.damage * enemy.damageMultiplier);
+    }
+
+    enemy.fireTimer =
+      enemy.type.fireDelay *
+      enemy.fireDelayMultiplier *
+      randomRange(0.92, 1.14);
+    enemy.muzzleFlash = 0.14;
+    sound.laser();
   }
 
   function chooseAvoidanceAngle(enemy, desiredAngle) {
@@ -1041,6 +1402,11 @@
         life: 2,
         color: enemy.type.color,
         glow: "#ffc28f",
+        behavior: enemy.type.attackType || "straight",
+        bounces: enemy.type.bounces || 0,
+        homingStrength: enemy.type.turnRate || 0,
+        homingDuration: enemy.type.homingDuration || 0,
+        explosive: false,
       });
       createMuzzleParticles(muzzleX, muzzleY, angle, enemy.type.color);
     }
@@ -1061,18 +1427,71 @@
       bullet.life -= dt;
       if (bullet.life <= 0) dead = true;
 
+      if (
+        bullet.behavior === "homing" &&
+        bullet.homingDuration > 0 &&
+        (bullet.homingTime || 0) < bullet.homingDuration
+      ) {
+        bullet.homingTime = (bullet.homingTime || 0) + dt;
+        let target = player;
+        if (bullet.owner === "player") {
+          let nearestDistance = Infinity;
+          enemies.forEach((enemy) => {
+            const enemyDistance = distance(enemy, bullet);
+            if (enemy.spawnTimer <= 0 && enemyDistance < nearestDistance) {
+              nearestDistance = enemyDistance;
+              target = enemy;
+            }
+          });
+        }
+
+        if (target) {
+          const speed = Math.hypot(bullet.vx, bullet.vy);
+          const currentAngle = Math.atan2(bullet.vy, bullet.vx);
+          const targetAngle = Math.atan2(target.y - bullet.y, target.x - bullet.x);
+          const guidedAngle = lerpAngle(
+            currentAngle,
+            targetAngle,
+            Math.min(1, bullet.homingStrength * dt)
+          );
+          bullet.vx = Math.cos(guidedAngle) * speed;
+          bullet.vy = Math.sin(guidedAngle) * speed;
+        }
+      }
+
       const travelX = bullet.vx * dt;
       const travelY = bullet.vy * dt;
       const travelDistance = Math.hypot(travelX, travelY);
       const steps = Math.max(1, Math.ceil(travelDistance / 10));
 
       for (let step = 0; step < steps && !dead; step += 1) {
+        const previousX = bullet.x;
+        const previousY = bullet.y;
         bullet.x += travelX / steps;
         bullet.y += travelY / steps;
 
-        if (bullet.x < 25 || bullet.y < 25 || bullet.x > WORLD.width - 25 || bullet.y > WORLD.height - 25) {
+        const hitBoundary =
+          bullet.x < 25 ||
+          bullet.y < 25 ||
+          bullet.x > WORLD.width - 25 ||
+          bullet.y > WORLD.height - 25;
+        if (hitBoundary) {
+          if (bullet.bounces > 0) {
+            if (bullet.x < 25 || bullet.x > WORLD.width - 25) {
+              bullet.x = clamp(bullet.x, 26, WORLD.width - 26);
+              bullet.vx *= -1;
+            } else {
+              bullet.y = clamp(bullet.y, 26, WORLD.height - 26);
+              bullet.vy *= -1;
+            }
+            bullet.bounces -= 1;
+            bullet.life = Math.min(2.4, bullet.life + 0.26);
+            createBurst(bullet.x, bullet.y, bullet.color, 5, 75);
+            break;
+          }
           dead = true;
-          createBurst(bullet.x, bullet.y, bullet.color, 5, 65);
+          if (bullet.explosive) detonatePlayerBullet(bullet);
+          else createBurst(bullet.x, bullet.y, bullet.color, 5, 65);
           break;
         }
 
@@ -1080,8 +1499,13 @@
           circleIntersectsRect(bullet.x, bullet.y, bullet.radius, obstacle)
         );
         if (hitObstacle) {
+          if (bullet.bounces > 0) {
+            reflectBullet(bullet, hitObstacle, previousX, previousY);
+            break;
+          }
           dead = true;
-          createBurst(bullet.x, bullet.y, bullet.color, 7, 100);
+          if (bullet.explosive) detonatePlayerBullet(bullet);
+          else createBurst(bullet.x, bullet.y, bullet.color, 7, 100);
           break;
         }
 
@@ -1093,6 +1517,9 @@
           if (enemy) {
             const angle = Math.atan2(bullet.vy, bullet.vx);
             damageEnemy(enemy, bullet.damage, angle, 105);
+            if (bullet.explosive) {
+              detonatePlayerBullet(bullet, enemy);
+            }
             dead = true;
           }
         } else if (
@@ -1108,6 +1535,42 @@
     });
 
     bullets = remaining;
+  }
+
+  function reflectBullet(bullet, obstacle, previousX, previousY) {
+    const hitHorizontal =
+      previousX <= obstacle.x ||
+      previousX >= obstacle.x + obstacle.w;
+    const hitVertical =
+      previousY <= obstacle.y ||
+      previousY >= obstacle.y + obstacle.h;
+
+    if (hitHorizontal && !hitVertical) bullet.vx *= -1;
+    else if (hitVertical && !hitHorizontal) bullet.vy *= -1;
+    else {
+      bullet.vx *= -1;
+      bullet.vy *= -1;
+    }
+
+    bullet.x = previousX;
+    bullet.y = previousY;
+    bullet.bounces -= 1;
+    bullet.life = Math.min(2.6, bullet.life + 0.3);
+    createBurst(bullet.x, bullet.y, bullet.color, 6, 85);
+  }
+
+  function detonatePlayerBullet(bullet, directTarget = null) {
+    const radius = 86 + player.explosiveShots * 14;
+    const blastDamage = bullet.damage * (0.48 + player.explosiveShots * 0.05);
+    createExplosion(bullet.x, bullet.y, "#ffb34f", 14);
+    enemies.slice().forEach((enemy) => {
+      if (enemy === directTarget || enemy.health <= 0) return;
+      const blastDistance = distance(enemy, bullet);
+      if (blastDistance < radius + enemy.radius) {
+        const angle = Math.atan2(enemy.y - bullet.y, enemy.x - bullet.x);
+        damageEnemy(enemy, blastDamage, angle, 125);
+      }
+    });
   }
 
   function damageEnemy(enemy, damage, angle, knockback) {
@@ -1292,6 +1755,13 @@
     particles = remaining;
   }
 
+  function updateBeams(dt) {
+    beams = beams.filter((beam) => {
+      beam.life -= dt;
+      return beam.life > 0;
+    });
+  }
+
   function updateCamera(dt) {
     const lookAheadX = pointer.active && !aimStick.active ? (pointer.worldX - player.x) * 0.09 : 0;
     const lookAheadY = pointer.active && !aimStick.active ? (pointer.worldY - player.y) * 0.09 : 0;
@@ -1351,6 +1821,7 @@
     updateBullets(dt);
     updatePickups(dt);
     updateParticles(dt);
+    updateBeams(dt);
     updateCamera(dt);
     updateHud();
     updateAmmoPips();
@@ -1539,6 +2010,26 @@
       ctx.fillStyle = ratio > 0.45 ? "#d7bd61" : "#e2614f";
       ctx.fillRect(tank.x - width / 2 + 1, tank.y - tank.radius - 17, (width - 2) * ratio, 4);
     }
+
+    if (!isPlayer && tank.type.attackType === "laser" && tank.laserCharge > 0) {
+      const chargeRatio = 1 - tank.laserCharge / tank.type.chargeTime;
+      ctx.save();
+      ctx.globalAlpha = 0.25 + chargeRatio * 0.55;
+      ctx.strokeStyle = tank.type.color;
+      ctx.lineWidth = 1.5 + chargeRatio * 3;
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.moveTo(
+        tank.x + Math.cos(tank.laserAngle) * (tank.radius + 16),
+        tank.y + Math.sin(tank.laserAngle) * (tank.radius + 16)
+      );
+      ctx.lineTo(
+        tank.x + Math.cos(tank.laserAngle) * tank.type.beamRange,
+        tank.y + Math.sin(tank.laserAngle) * tank.type.beamRange
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function drawBullets() {
@@ -1566,6 +2057,40 @@
       ctx.fill();
     });
     ctx.restore();
+  }
+
+  function drawBeams() {
+    beams.forEach((beam) => {
+      const alpha = clamp(beam.life / beam.maxLife, 0, 1);
+      const endX = beam.x + Math.cos(beam.angle) * beam.length;
+      const endY = beam.y + Math.sin(beam.angle) * beam.length;
+      const gradient = ctx.createLinearGradient(beam.x, beam.y, endX, endY);
+      gradient.addColorStop(0, beam.coreColor);
+      gradient.addColorStop(0.65, beam.color);
+      gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = beam.color;
+      ctx.shadowBlur = 24;
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = beam.width * 2.4;
+      ctx.beginPath();
+      ctx.moveTo(beam.x, beam.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      ctx.globalAlpha = alpha * 0.95;
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = beam.coreColor;
+      ctx.lineWidth = beam.width * 0.75;
+      ctx.beginPath();
+      ctx.moveTo(beam.x, beam.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.restore();
+    });
   }
 
   function drawParticles() {
@@ -1742,6 +2267,7 @@
 
     if (gameState !== "gameover") drawTank(player, true);
     drawBullets();
+    drawBeams();
     drawParticles();
     drawCrosshair();
     ctx.restore();
@@ -1759,6 +2285,7 @@
       update(dt);
     } else {
       updateParticles(dt * 0.4);
+      updateBeams(dt * 0.4);
       updateCamera(dt);
     }
     draw();
