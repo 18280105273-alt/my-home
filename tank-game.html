@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#121817" />
+    <title>动荡坦克 | 单机坦克竞技场</title>
+    <link rel="stylesheet" href="tank-game.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="topbar">
+        <a class="brand" href="index.html" aria-label="返回个人主页">
+          <span class="brand-mark" aria-hidden="true">
+            <span class="brand-barrel"></span>
+          </span>
+          <span class="brand-copy">
+            <strong>动荡坦克</strong>
+            <small>STEEL STORM</small>
+          </span>
+        </a>
+
+        <div class="topbar-actions">
+          <div class="status-chip">
+            <span>波次</span>
+            <strong id="waveValue">01</strong>
+          </div>
+          <div class="status-chip score-chip">
+            <span>得分</span>
+            <strong id="scoreValue">000000</strong>
+          </div>
+          <button class="icon-button" id="pauseButton" type="button" aria-label="暂停游戏">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="stage">
+        <div class="arena" id="arena">
+          <canvas
+            id="gameCanvas"
+            width="1440"
+            height="820"
+            aria-label="动荡坦克游戏区域。使用移动键驾驶坦克，鼠标瞄准并射击。"
+          ></canvas>
+
+          <div class="hud" aria-live="polite">
+            <div class="vital-card health-card">
+              <div class="vital-label">
+                <span>装甲</span>
+                <strong id="healthText">100</strong>
+              </div>
+              <div class="meter">
+                <span id="healthBar"></span>
+              </div>
+            </div>
+
+            <div class="wave-readout">
+              <span id="waveLabel">准备迎战</span>
+              <strong id="waveTimer">3</strong>
+              <small id="difficultyLabel">威胁 x1.0</small>
+              <small id="buffCountLabel">强化 0</small>
+            </div>
+
+            <div class="vital-card energy-card">
+              <div class="vital-label">
+                <span>冲击波</span>
+                <strong id="energyText">100%</strong>
+              </div>
+              <div class="meter energy-meter">
+                <span id="energyBar"></span>
+              </div>
+            </div>
+
+            <div class="ammo-readout">
+              <span id="reloadText">弹药</span>
+              <div class="ammo-pips" id="ammoPips"></div>
+            </div>
+          </div>
+
+          <div class="combat-message" id="combatMessage" aria-live="polite"></div>
+
+          <div class="overlay visible" id="startOverlay">
+            <div class="overlay-panel start-panel">
+              <p class="overlay-kicker">单机竞技场</p>
+              <h1>动荡坦克</h1>
+              <p class="overlay-copy">守住阵地，逐波击穿敌军装甲。</p>
+
+              <div class="briefing-grid" aria-label="操作说明">
+                <article class="briefing-item">
+                  <span class="briefing-icon">01</span>
+                  <div>
+                    <h3>驾驶移动</h3>
+                    <p><kbd>WASD</kbd> 或 <kbd>方向键</kbd></p>
+                  </div>
+                </article>
+                <article class="briefing-item">
+                  <span class="briefing-icon">02</span>
+                  <div>
+                    <h3>瞄准射击</h3>
+                    <p>鼠标瞄准，点击或按住开火</p>
+                  </div>
+                </article>
+                <article class="briefing-item">
+                  <span class="briefing-icon">03</span>
+                  <div>
+                    <h3>冲击波</h3>
+                    <p><kbd>空格</kbd> 清除近身炮弹并击退敌军</p>
+                  </div>
+                </article>
+                <article class="briefing-item">
+                  <span class="briefing-icon">04</span>
+                  <div>
+                    <h3>暂停战斗</h3>
+                    <p><kbd>Esc</kbd> 或 <kbd>P</kbd></p>
+                  </div>
+                </article>
+              </div>
+
+              <div class="briefing-note">
+                <div>
+                  <span>关卡递增</span>
+                  <strong>敌军生命、火力、速度逐波提升</strong>
+                </div>
+                <div>
+                  <span>战利品</span>
+                  <strong>每波结束随机三选一强化</strong>
+                </div>
+              </div>
+
+              <button class="primary-button" id="startButton" type="button">
+                <span>开始战斗</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="overlay" id="buffOverlay">
+            <div class="overlay-panel buff-panel">
+              <p class="overlay-kicker">战利品回收</p>
+              <h2>选择一项强化</h2>
+              <p class="overlay-copy" id="buffSummary">第 1 波已肃清，选择下一轮作战增益。</p>
+              <div class="buff-grid" id="buffCards"></div>
+            </div>
+          </div>
+
+          <div class="overlay" id="pauseOverlay">
+            <div class="overlay-panel compact-panel">
+              <p class="overlay-kicker">战斗暂停</p>
+              <h2>阵地待命</h2>
+              <div class="button-row">
+                <button class="primary-button" id="resumeButton" type="button">继续战斗</button>
+                <button class="secondary-button" id="restartFromPause" type="button">重新开始</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="overlay" id="gameOverOverlay">
+            <div class="overlay-panel compact-panel">
+              <p class="overlay-kicker danger-kicker">装甲损毁</p>
+              <h2>阵地失守</h2>
+              <div class="result-grid">
+                <div>
+                  <span>最终得分</span>
+                  <strong id="finalScore">0</strong>
+                </div>
+                <div>
+                  <span>抵达波次</span>
+                  <strong id="finalWave">1</strong>
+                </div>
+                <div>
+                  <span>击毁敌军</span>
+                  <strong id="finalKills">0</strong>
+                </div>
+              </div>
+              <button class="primary-button" id="restartButton" type="button">再次出击</button>
+            </div>
+          </div>
+
+          <div class="touch-controls" aria-hidden="true">
+            <div class="control-pad move-pad" id="movePad">
+              <span class="pad-ring"></span>
+              <span class="pad-knob" id="moveKnob"></span>
+            </div>
+            <div class="control-pad aim-pad" id="aimPad">
+              <span class="pad-ring"></span>
+              <span class="pad-knob" id="aimKnob"></span>
+            </div>
+            <button class="special-button" id="specialButton" type="button" tabindex="-1" aria-label="释放冲击波">
+              <span></span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="tank-game.js" defer></script>
+  </body>
+</html>
