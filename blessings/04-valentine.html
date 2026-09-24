@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="rgb(41, 7, 17)">
+    <meta name="description" content="一封怦然心动的情人节祝福">
+    <title>心动告白 · 与你相伴</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/blessing.css">
+</head>
+<body data-theme="valentine">
+    <canvas id="fx" class="fx-canvas" aria-hidden="true"></canvas>
+    <div class="sky-art" aria-hidden="true"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <section class="cover" aria-labelledby="cover-title">
+        <div class="cover-inner">
+            <p class="cover-kicker">For You · 怦然心动</p>
+            <div class="cover-emblem" aria-hidden="true"></div>
+            <h1 id="cover-title" class="cover-title">心动不是答案，心定才是</h1>
+            <p class="cover-subtitle">有些话，只想在漫天的爱意里说给你听。</p>
+            <button class="open-button" type="button">
+                收下心意
+                <span class="open-button-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                </span>
+            </button>
+            <p class="cover-hint">心跳正在替你回答</p>
+        </div>
+    </section>
+
+    <main class="site-shell">
+        <section class="world">
+            <article class="blessing">
+                <header class="blessing-heading">
+                    <p class="blessing-kicker">目光所及 · 皆是欢喜</p>
+                    <span class="recipient" data-recipient>致 我唯一的心动</span>
+                    <h1 class="blessing-title">与你<span class="accent">相伴</span></h1>
+                </header>
+                <div class="blessing-message">
+                    <span class="message-line">喜欢你，是一件很自然的事。</span>
+                    <span class="message-line">像风会吹向远方，星光总会落在夜里。</span>
+                    <span class="message-line">往后的日子，想把每一份小确幸都与你分享，</span>
+                    <span class="message-line">从心动开始，陪你去很远的以后。</span>
+                </div>
+                <p class="blessing-signature"><span data-sender>来自 一直看向你的人</span></p>
+                <div class="blessing-actions">
+                    <button class="action-button" type="button" data-page-action="copy">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
+                        复制心意
+                    </button>
+                    <a class="action-button" href="index.html">
+                        选择另一封
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                    </a>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <script src="assets/blessing.js"></script>
+</body>
+</html>

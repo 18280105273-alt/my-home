@@ -1,0 +1,972 @@
+:root {
+    --page-bg: #080b12;
+    --page-panel: rgba(16, 21, 31, 0.88);
+    --page-ink: #f8f3e9;
+    --page-muted: rgba(248, 243, 233, 0.6);
+    --page-line: rgba(255, 255, 255, 0.11);
+    --gold: #efc76d;
+    --mint: #7bd4bf;
+    --coral: #f58c7f;
+    --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+    --font-ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    min-width: 320px;
+    background: var(--page-bg);
+}
+
+body {
+    min-width: 320px;
+    min-height: 100svh;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--page-ink);
+    background:
+        radial-gradient(circle at 74% 6%, rgba(239, 199, 109, 0.12), transparent 25%),
+        radial-gradient(circle at 12% 42%, rgba(123, 212, 191, 0.09), transparent 28%),
+        linear-gradient(150deg, #080b12, #111522 58%, #0b111c);
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 76px 76px;
+    mask-image: linear-gradient(to bottom, #000, transparent 78%);
+    content: "";
+}
+
+button,
+a {
+    -webkit-tap-highlight-color: transparent;
+}
+
+a:focus-visible,
+button:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 4px;
+}
+
+#atmosphere {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.gallery-shell {
+    position: relative;
+    z-index: 2;
+    width: min(100%, 1420px);
+    margin: 0 auto;
+    padding:
+        max(22px, env(safe-area-inset-top))
+        clamp(18px, 4vw, 54px)
+        max(60px, env(safe-area-inset-bottom));
+}
+
+.gallery-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding-bottom: 34px;
+}
+
+.gallery-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 11px;
+    color: var(--page-ink);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-decoration: none;
+    text-transform: uppercase;
+}
+
+.gallery-brand-mark {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border: 1px solid var(--page-line);
+    border-radius: 50%;
+    color: var(--gold);
+    background: rgba(255, 255, 255, 0.045);
+    box-shadow: 0 0 28px rgba(239, 199, 109, 0.12);
+}
+
+.gallery-brand-mark::after {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 13px currentColor;
+    content: "";
+}
+
+.nav-note {
+    margin: 0;
+    color: var(--page-muted);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+}
+
+.gallery-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+    gap: 48px;
+    align-items: end;
+    padding: 54px 0 46px;
+    border-top: 1px solid var(--page-line);
+    border-bottom: 1px solid var(--page-line);
+}
+
+.hero-kicker {
+    margin: 0 0 16px;
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+}
+
+.hero-title {
+    max-width: 880px;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(3.5rem, 8.4vw, 8.3rem);
+    font-weight: 600;
+    line-height: 0.98;
+    text-wrap: balance;
+}
+
+.hero-title span {
+    color: var(--gold);
+}
+
+.hero-aside {
+    max-width: 390px;
+    justify-self: end;
+}
+
+.hero-aside p {
+    margin: 0;
+    color: var(--page-muted);
+    font-family: var(--font-display);
+    font-size: clamp(1rem, 1.8vw, 1.22rem);
+    line-height: 1.9;
+}
+
+.hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.hero-meta span {
+    padding: 7px 10px;
+    border: 1px solid var(--page-line);
+    border-radius: 999px;
+    color: rgba(248, 243, 233, 0.72);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+}
+
+.wish-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+    padding-top: 34px;
+}
+
+.wish-card {
+    --mx: 50%;
+    --my: 50%;
+    position: relative;
+    display: grid;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--page-line);
+    border-radius: 8px;
+    color: var(--page-ink);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.012)),
+        var(--page-panel);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, 0.18);
+    text-decoration: none;
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+        opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.35s ease,
+        box-shadow 0.35s ease;
+}
+
+.wish-card.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.wish-card:hover {
+    border-color: rgba(239, 199, 109, 0.42);
+    box-shadow: 0 28px 84px rgba(0, 0, 0, 0.28);
+    transform: translateY(-5px);
+}
+
+.wish-card::after {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    background: radial-gradient(circle at var(--mx) var(--my), rgba(255, 255, 255, 0.11), transparent 26%);
+    opacity: 0;
+    content: "";
+    transition: opacity 0.3s ease;
+}
+
+.wish-card:hover::after {
+    opacity: 1;
+}
+
+.mini-scene {
+    position: relative;
+    min-height: 230px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--page-line);
+    background: #101725;
+    isolation: isolate;
+}
+
+.mini-scene::before {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 42px 42px;
+    content: "";
+    mask-image: linear-gradient(to bottom, #000, transparent);
+}
+
+.mini-scene span {
+    position: absolute;
+    display: block;
+    transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
+}
+
+.wish-card:hover .scene-a {
+    transform: translate3d(0, -7px, 0) scale(1.035);
+}
+
+.wish-card:hover .scene-b {
+    transform: translate3d(9px, -3px, 0);
+}
+
+.wish-card:hover .scene-c {
+    transform: translate3d(-8px, -5px, 0);
+}
+
+.wish-card:hover .scene-d {
+    transform: translate3d(0, -8px, 0) rotate(8deg);
+}
+
+.card-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 22px;
+    align-items: end;
+    padding: 22px 22px 24px;
+}
+
+.card-index {
+    display: block;
+    margin-bottom: 9px;
+    color: var(--gold);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+}
+
+.card-copy h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.55rem, 3vw, 2.15rem);
+    font-weight: 600;
+    line-height: 1.15;
+}
+
+.card-copy p {
+    margin: 9px 0 0;
+    color: var(--page-muted);
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+.card-arrow {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border: 1px solid var(--page-line);
+    border-radius: 50%;
+    color: var(--page-ink);
+    background: rgba(255, 255, 255, 0.035);
+    transition: color 0.25s ease, background 0.25s ease, transform 0.25s ease;
+}
+
+.wish-card:hover .card-arrow {
+    color: #11141a;
+    background: var(--gold);
+    transform: rotate(-8deg);
+}
+
+.card-arrow svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+}
+
+/* 中秋 */
+.wish-card[data-theme="mid-autumn"] .mini-scene {
+    background:
+        radial-gradient(circle at 74% 23%, rgba(240, 199, 103, 0.24), transparent 22%),
+        linear-gradient(145deg, #09101f, #1d2d48);
+}
+
+.wish-card[data-theme="mid-autumn"] .scene-a {
+    top: 31px;
+    right: 15%;
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 34%, #fff8c9 0 7%, #f4cf77 58%, #b77d32 100%);
+    box-shadow: 0 0 44px rgba(247, 210, 117, 0.46);
+}
+
+.wish-card[data-theme="mid-autumn"] .scene-b {
+    right: -10%;
+    bottom: -50%;
+    width: 74%;
+    height: 120%;
+    border-radius: 50% 50% 0 0;
+    background: linear-gradient(145deg, #13243a, #08101d);
+    transform: rotate(-13deg);
+}
+
+.wish-card[data-theme="mid-autumn"] .scene-c {
+    bottom: -58%;
+    left: -10%;
+    width: 72%;
+    height: 113%;
+    border-radius: 50% 50% 0 0;
+    background: linear-gradient(145deg, #1c3850, #0a1727);
+    transform: rotate(12deg);
+}
+
+.wish-card[data-theme="mid-autumn"] .scene-d {
+    top: 22px;
+    left: 12%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+        48px 34px 0 rgba(255, 255, 255, 0.7),
+        98px 8px 0 rgba(128, 215, 205, 0.7),
+        142px 58px 0 rgba(255, 255, 255, 0.65),
+        26px 82px 0 rgba(128, 215, 205, 0.6);
+}
+
+/* 新年 */
+.wish-card[data-theme="new-year"] .mini-scene {
+    background:
+        radial-gradient(circle at 50% 45%, rgba(255, 200, 92, 0.17), transparent 25%),
+        linear-gradient(145deg, #2b090c, #571117);
+}
+
+.wish-card[data-theme="new-year"] .scene-a,
+.wish-card[data-theme="new-year"] .scene-b {
+    top: 38px;
+    width: 68px;
+    height: 94px;
+    border-radius: 44% 44% 40% 40%;
+    background:
+        linear-gradient(90deg, transparent 47%, rgba(255, 222, 124, 0.68) 48% 52%, transparent 53%),
+        linear-gradient(145deg, #d6413f, #78121d);
+    box-shadow: 0 0 34px rgba(230, 74, 66, 0.35);
+}
+
+.wish-card[data-theme="new-year"] .scene-a {
+    left: 20%;
+}
+
+.wish-card[data-theme="new-year"] .scene-b {
+    right: 21%;
+    transform: scale(0.76);
+    transform-origin: top center;
+}
+
+.wish-card[data-theme="new-year"] .scene-c {
+    bottom: -42%;
+    left: 18%;
+    width: 64%;
+    height: 96%;
+    border-radius: 50% 50% 0 0;
+    background: linear-gradient(#5d1318, #29080b);
+}
+
+.wish-card[data-theme="new-year"] .scene-d {
+    top: 16px;
+    left: 48%;
+    width: 3px;
+    height: 154px;
+    background: linear-gradient(transparent, #ffd56f, transparent);
+    box-shadow:
+        -86px 40px 0 -1px #ff8b69,
+        82px 56px 0 -1px #ffe09a,
+        -46px 102px 0 -1px #ff7f59,
+        38px 117px 0 -1px #ffd56f;
+    transform: rotate(16deg);
+}
+
+/* 生日 */
+.wish-card[data-theme="birthday"] .mini-scene {
+    background:
+        radial-gradient(circle at 32% 22%, rgba(255, 206, 225, 0.17), transparent 24%),
+        linear-gradient(145deg, #241a42, #3b2952 55%, #18243d);
+}
+
+.wish-card[data-theme="birthday"] .scene-a {
+    bottom: 42px;
+    left: 50%;
+    width: 164px;
+    height: 76px;
+    border-radius: 14px 14px 8px 8px;
+    background: linear-gradient(to bottom, #ffc0d2 0 36%, #806adb 36% 44%, #ffb06a 44% 66%, #fa7d91 66%);
+    box-shadow: 0 20px 46px rgba(0, 0, 0, 0.26);
+    transform: translateX(-50%);
+}
+
+.wish-card[data-theme="birthday"] .scene-b {
+    bottom: 117px;
+    left: calc(50% - 5px);
+    width: 10px;
+    height: 42px;
+    border-radius: 5px;
+    background: repeating-linear-gradient(45deg, #fff 0 6px, #f1658b 6px 12px);
+}
+
+.wish-card[data-theme="birthday"] .scene-c {
+    bottom: 155px;
+    left: calc(50% - 8px);
+    width: 16px;
+    height: 21px;
+    border-radius: 50% 50% 45% 45%;
+    background: radial-gradient(circle at 50% 78%, #fff 0 12%, #ffd168 34%, #ff735c 68%, transparent 72%);
+    filter: drop-shadow(0 0 12px #ffb64b);
+}
+
+.wish-card[data-theme="birthday"] .scene-d {
+    inset: 22px 24px auto;
+    height: 150px;
+    background-image:
+        radial-gradient(circle at 8% 24%, #ffdf7c 0 3px, transparent 4px),
+        radial-gradient(circle at 24% 8%, #8de3dc 0 4px, transparent 5px),
+        radial-gradient(circle at 48% 31%, #f497c0 0 3px, transparent 4px),
+        radial-gradient(circle at 75% 12%, #fff0bb 0 4px, transparent 5px),
+        radial-gradient(circle at 91% 38%, #8aa8ef 0 3px, transparent 4px);
+}
+
+/* 情人节 */
+.wish-card[data-theme="valentine"] .mini-scene {
+    background:
+        radial-gradient(circle at 50% 52%, rgba(255, 104, 135, 0.19), transparent 28%),
+        linear-gradient(145deg, #2c0812, #551126);
+}
+
+.wish-card[data-theme="valentine"] .scene-a {
+    top: 54px;
+    left: calc(50% - 52px);
+    width: 104px;
+    height: 104px;
+    border-radius: 12px 0 12px 12px;
+    background: linear-gradient(145deg, #ff9ea9, #d62959 70%);
+    box-shadow: 0 0 52px rgba(255, 88, 122, 0.42);
+    transform: rotate(45deg);
+}
+
+.wish-card[data-theme="valentine"] .scene-a::before,
+.wish-card[data-theme="valentine"] .scene-a::after {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: inherit;
+    content: "";
+}
+
+.wish-card[data-theme="valentine"] .scene-a::before {
+    top: -50%;
+}
+
+.wish-card[data-theme="valentine"] .scene-a::after {
+    left: -50%;
+}
+
+.wish-card[data-theme="valentine"] .scene-b,
+.wish-card[data-theme="valentine"] .scene-c {
+    top: 34px;
+    left: calc(50% - 104px);
+    width: 208px;
+    height: 208px;
+    border: 1px solid rgba(255, 165, 184, 0.19);
+    border-radius: 50%;
+}
+
+.wish-card[data-theme="valentine"] .scene-c {
+    top: 8px;
+    left: calc(50% - 130px);
+    width: 260px;
+    height: 260px;
+    border-color: rgba(255, 165, 184, 0.1);
+}
+
+.wish-card[data-theme="valentine"] .scene-d {
+    top: 35px;
+    right: 14%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #ffd5dc;
+    box-shadow:
+        -106px 68px 0 rgba(255, 215, 223, 0.7),
+        -168px -4px 0 rgba(255, 154, 177, 0.75),
+        16px 112px 0 rgba(255, 220, 226, 0.65),
+        72px 39px 0 rgba(255, 154, 177, 0.66);
+}
+
+/* 母亲节 */
+.wish-card[data-theme="mothers-day"] .mini-scene {
+    background:
+        radial-gradient(circle at 52% 45%, rgba(255, 255, 255, 0.82), transparent 23%),
+        linear-gradient(145deg, #dceae3, #f5eee8 60%, #dceced);
+}
+
+.wish-card[data-theme="mothers-day"] .scene-a {
+    top: 50px;
+    left: calc(50% - 48px);
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 50% 50%, #f0bd55 0 12%, #fff7e7 13% 22%, transparent 23%),
+        conic-gradient(
+            from -24deg,
+            #ef91aa 0 24deg,
+            #fff 24deg 48deg,
+            #ef91aa 48deg 72deg,
+            #fff 72deg 96deg,
+            #ef91aa 96deg 120deg,
+            #fff 120deg 144deg,
+            #ef91aa 144deg 168deg,
+            #fff 168deg 192deg,
+            #ef91aa 192deg 216deg,
+            #fff 216deg 240deg,
+            #ef91aa 240deg 264deg,
+            #fff 264deg 288deg,
+            #ef91aa 288deg 312deg,
+            #fff 312deg 336deg,
+            #ef91aa 336deg 360deg
+        );
+    filter: drop-shadow(0 18px 34px rgba(183, 89, 111, 0.22));
+}
+
+.wish-card[data-theme="mothers-day"] .scene-b,
+.wish-card[data-theme="mothers-day"] .scene-c {
+    top: 106px;
+    width: 82px;
+    height: 42px;
+    border-radius: 50% 50% 10% 50%;
+    background: #78b89d;
+}
+
+.wish-card[data-theme="mothers-day"] .scene-b {
+    left: calc(50% - 92px);
+    transform: rotate(20deg);
+}
+
+.wish-card[data-theme="mothers-day"] .scene-c {
+    right: calc(50% - 92px);
+    transform: rotate(160deg);
+}
+
+.wish-card[data-theme="mothers-day"] .scene-d {
+    top: 22px;
+    left: 15%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #ed9ab1;
+    box-shadow:
+        65px 78px 0 #78b89d,
+        152px 23px 0 #f3c65f,
+        229px 91px 0 #83bedf,
+        290px -3px 0 #ed9ab1,
+        342px 62px 0 #78b89d;
+}
+
+/* 父亲节 */
+.wish-card[data-theme="fathers-day"] .mini-scene {
+    background:
+        linear-gradient(to bottom, rgba(18, 36, 62, 0.08), rgba(4, 9, 17, 0.62)),
+        linear-gradient(145deg, #0a172a, #172b4a);
+}
+
+.wish-card[data-theme="fathers-day"] .scene-a {
+    right: -8%;
+    bottom: -52%;
+    width: 70%;
+    height: 132%;
+    background: linear-gradient(145deg, #152a44, #07101c);
+    clip-path: polygon(0 100%, 40% 28%, 56% 58%, 74% 0, 100% 100%);
+}
+
+.wish-card[data-theme="fathers-day"] .scene-b {
+    bottom: -62%;
+    left: -10%;
+    width: 68%;
+    height: 130%;
+    background: linear-gradient(145deg, #1b3655, #091322);
+    clip-path: polygon(0 100%, 32% 18%, 51% 61%, 72% 3%, 100% 100%);
+}
+
+.wish-card[data-theme="fathers-day"] .scene-c {
+    top: 32px;
+    right: 18%;
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: #f2ca72;
+    box-shadow: 0 0 42px rgba(242, 202, 114, 0.34);
+}
+
+.wish-card[data-theme="fathers-day"] .scene-d {
+    top: 48px;
+    left: 17%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+        58px 24px 0 #91b7df,
+        103px -14px 0 #fff,
+        141px 49px 0 #7ed1b8,
+        207px 10px 0 #fff,
+        270px 57px 0 #91b7df;
+}
+
+/* 毕业 */
+.wish-card[data-theme="graduation"] .mini-scene {
+    background:
+        radial-gradient(circle at 28% 22%, rgba(239, 197, 93, 0.15), transparent 23%),
+        linear-gradient(145deg, #0d1b27, #1b3543 60%, #0a111b);
+}
+
+.wish-card[data-theme="graduation"] .scene-a {
+    top: 58px;
+    left: calc(50% - 83px);
+    width: 166px;
+    height: 78px;
+    clip-path: polygon(50% 0, 100% 35%, 50% 70%, 0 35%);
+    background: linear-gradient(145deg, #263441, #090e14);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+}
+
+.wish-card[data-theme="graduation"] .scene-b {
+    top: 100px;
+    left: calc(50% - 40px);
+    width: 80px;
+    height: 48px;
+    background: #e6b64a;
+    clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+}
+
+.wish-card[data-theme="graduation"] .scene-c {
+    top: 30px;
+    right: 14%;
+    width: 50px;
+    height: 28px;
+    background: #eee5d4;
+    clip-path: polygon(0 45%, 100% 0, 32% 80%, 28% 52%);
+    transform: rotate(-12deg);
+}
+
+.wish-card[data-theme="graduation"] .scene-d {
+    top: 54px;
+    right: 22%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #f3c95f;
+    box-shadow:
+        45px 18px 0 #81d2bf,
+        86px -4px 0 #f3c95f,
+        -126px 77px 0 #f27f73,
+        -205px 29px 0 #81d2bf,
+        -268px 96px 0 #f3c95f;
+}
+
+/* 感恩 */
+.wish-card[data-theme="thanksgiving"] .mini-scene {
+    background:
+        radial-gradient(circle at 72% 22%, rgba(245, 195, 104, 0.22), transparent 24%),
+        linear-gradient(145deg, #2c1711, #61301f 55%, #17302e);
+}
+
+.wish-card[data-theme="thanksgiving"] .scene-a {
+    top: 42px;
+    left: calc(50% - 64px);
+    width: 128px;
+    height: 128px;
+    background: linear-gradient(145deg, #f7b750, #ce5836 68%, #884126);
+    clip-path: polygon(50% 0, 62% 22%, 100% 10%, 78% 43%, 100% 68%, 62% 66%, 50% 100%, 38% 66%, 0 68%, 22% 43%, 0 10%, 38% 22%);
+    filter: drop-shadow(0 18px 32px rgba(0, 0, 0, 0.28));
+}
+
+.wish-card[data-theme="thanksgiving"] .scene-b {
+    top: 64px;
+    left: 50%;
+    width: 2px;
+    height: 82px;
+    background: rgba(255, 239, 189, 0.62);
+    transform: rotate(-37deg);
+    transform-origin: top;
+}
+
+.wish-card[data-theme="thanksgiving"] .scene-c {
+    right: 13%;
+    bottom: -36%;
+    width: 70%;
+    height: 82%;
+    border-radius: 50% 50% 0 0;
+    background: linear-gradient(145deg, #20473e, #10221f);
+}
+
+.wish-card[data-theme="thanksgiving"] .scene-d {
+    top: 27px;
+    left: 15%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #f6d48d;
+    box-shadow:
+        58px 34px 0 #e78d47,
+        130px -10px 0 #f6d48d,
+        211px 51px 0 #78b9a6,
+        287px 5px 0 #e78d47;
+}
+
+/* 纪念日 */
+.wish-card[data-theme="anniversary"] .mini-scene {
+    background:
+        radial-gradient(circle at 50% 50%, rgba(240, 212, 158, 0.13), transparent 26%),
+        linear-gradient(145deg, #11141e, #1d1d2b 62%, #101d1a);
+}
+
+.wish-card[data-theme="anniversary"] .scene-a,
+.wish-card[data-theme="anniversary"] .scene-b {
+    top: 38px;
+    left: calc(50% - 75px);
+    width: 150px;
+    height: 150px;
+    border: 2px solid rgba(240, 212, 158, 0.76);
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 13px rgba(240, 212, 158, 0.04),
+        0 0 40px rgba(240, 212, 158, 0.14);
+}
+
+.wish-card[data-theme="anniversary"] .scene-b {
+    top: 60px;
+    left: calc(50% - 53px);
+    width: 106px;
+    height: 106px;
+    border-color: rgba(101, 199, 166, 0.72);
+}
+
+.wish-card[data-theme="anniversary"] .scene-c {
+    top: 95px;
+    left: calc(50% - 14px);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #ef91a5;
+    transform: rotate(45deg);
+    box-shadow: 0 0 25px rgba(239, 145, 165, 0.32);
+}
+
+.wish-card[data-theme="anniversary"] .scene-c::before,
+.wish-card[data-theme="anniversary"] .scene-c::after {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: inherit;
+    content: "";
+}
+
+.wish-card[data-theme="anniversary"] .scene-c::before {
+    top: -50%;
+}
+
+.wish-card[data-theme="anniversary"] .scene-c::after {
+    left: -50%;
+}
+
+.wish-card[data-theme="anniversary"] .scene-d {
+    top: 21px;
+    left: 13%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #f0d49e;
+    box-shadow:
+        78px 79px 0 #65c7a6,
+        158px 21px 0 #f0d49e,
+        244px 87px 0 #ef91a5,
+        313px 14px 0 #65c7a6;
+}
+
+/* 平安喜乐 */
+.wish-card[data-theme="peace"] .mini-scene {
+    background:
+        radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.9), transparent 25%),
+        linear-gradient(145deg, #cdebe7, #dcecef 58%, #f4e4da);
+}
+
+.wish-card[data-theme="peace"] .scene-a {
+    top: 34px;
+    right: 16%;
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    background: #f3aa82;
+    box-shadow: 0 0 42px rgba(243, 170, 130, 0.38);
+}
+
+.wish-card[data-theme="peace"] .scene-b,
+.wish-card[data-theme="peace"] .scene-c {
+    right: -8%;
+    bottom: 22px;
+    width: 118%;
+    height: 62px;
+    border: 2px solid rgba(52, 146, 141, 0.35);
+    border-radius: 50%;
+}
+
+.wish-card[data-theme="peace"] .scene-c {
+    right: -12%;
+    bottom: -8px;
+    width: 128%;
+    border-color: rgba(78, 160, 174, 0.24);
+}
+
+.wish-card[data-theme="peace"] .scene-d {
+    top: 20px;
+    left: 18%;
+    width: 12px;
+    height: 12px;
+    border: 1px solid rgba(50, 143, 139, 0.54);
+    border-radius: 50%;
+    box-shadow:
+        58px 36px 0 -1px rgba(243, 170, 130, 0.62),
+        142px 4px 0 -1px rgba(85, 180, 173, 0.62),
+        236px 54px 0 -1px rgba(240, 202, 108, 0.7),
+        309px 15px 0 -1px rgba(129, 175, 214, 0.62);
+}
+
+@media (max-width: 900px) {
+    .gallery-hero {
+        grid-template-columns: 1fr;
+        gap: 28px;
+    }
+
+    .hero-aside {
+        max-width: 560px;
+        justify-self: start;
+    }
+
+    .wish-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 620px) {
+    .gallery-shell {
+        padding-right: 15px;
+        padding-left: 15px;
+    }
+
+    .gallery-nav {
+        padding-bottom: 24px;
+    }
+
+    .nav-note {
+        display: none;
+    }
+
+    .gallery-hero {
+        padding: 38px 0 34px;
+    }
+
+    .hero-title {
+        font-size: clamp(3.4rem, 18vw, 5.4rem);
+    }
+
+    .hero-aside p {
+        font-size: 1rem;
+    }
+
+    .wish-grid {
+        gap: 13px;
+        padding-top: 24px;
+    }
+
+    .mini-scene {
+        min-height: 205px;
+    }
+
+    .card-copy {
+        padding: 19px 18px 20px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wish-card,
+    .mini-scene span {
+        transition: none !important;
+    }
+}

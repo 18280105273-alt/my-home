@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#eaf3ec">
+    <meta name="description" content="一封献给妈妈的温柔祝福">
+    <title>母亲节快乐 · 岁月温柔</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/blessing.css">
+</head>
+<body data-theme="mothers-day">
+    <canvas id="fx" class="fx-canvas" aria-hidden="true"></canvas>
+    <div class="sky-art" aria-hidden="true"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <section class="cover" aria-labelledby="cover-title">
+        <div class="cover-inner">
+            <p class="cover-kicker">For Mom · 温柔岁月</p>
+            <div class="cover-emblem" aria-hidden="true"></div>
+            <h1 id="cover-title" class="cover-title">岁月温柔，是因为有你</h1>
+            <p class="cover-subtitle">这一朵花，想慢慢开在你心里。</p>
+            <button class="open-button" type="button">
+                送给妈妈
+                <span class="open-button-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                </span>
+            </button>
+            <p class="cover-hint">愿她被时光温柔以待</p>
+        </div>
+    </section>
+
+    <main class="site-shell">
+        <section class="world">
+            <article class="blessing">
+                <header class="blessing-heading">
+                    <p class="blessing-kicker">爱在日常 · 温柔生长</p>
+                    <span class="recipient" data-recipient>致 最温柔也最勇敢的妈妈</span>
+                    <h1 class="blessing-title">妈妈，<span class="accent">节日快乐</span></h1>
+                </header>
+                <div class="blessing-message">
+                    <span class="message-line">谢谢你把琐碎的日子，过成了温暖的家。</span>
+                    <span class="message-line">谢谢你的每一次牵挂，也谢谢你的永远相信。</span>
+                    <span class="message-line">愿你少一点操劳，多一点属于自己的快乐。</span>
+                    <span class="message-line">愿你眉眼舒展，身体健康，天天都有好心情。</span>
+                </div>
+                <p class="blessing-signature"><span data-sender>来自 永远爱你的孩子</span></p>
+                <div class="blessing-actions">
+                    <button class="action-button" type="button" data-page-action="copy">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
+                        复制祝福
+                    </button>
+                    <a class="action-button" href="index.html">
+                        选择另一封
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                    </a>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <script src="assets/blessing.js"></script>
+</body>
+</html>

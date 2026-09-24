@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#081124">
+    <meta name="description" content="一封写给中秋的月色祝福">
+    <title>中秋快乐 · 月色正好</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/blessing.css">
+</head>
+<body data-theme="mid-autumn">
+    <canvas id="fx" class="fx-canvas" aria-hidden="true"></canvas>
+    <div class="sky-art" aria-hidden="true"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <section class="cover" aria-labelledby="cover-title">
+        <div class="cover-inner">
+            <p class="cover-kicker">Mid-Autumn · 月色来信</p>
+            <div class="cover-emblem" aria-hidden="true"></div>
+            <h1 id="cover-title" class="cover-title">月色正好，人间团圆</h1>
+            <p class="cover-subtitle">有一封中秋祝福，正在月光下等你拆开。</p>
+            <button class="open-button" type="button">
+                开启祝福
+                <span class="open-button-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                </span>
+            </button>
+            <p class="cover-hint">轻触开启，愿所有思念都有回响</p>
+        </div>
+    </section>
+
+    <main class="site-shell">
+        <section class="world">
+            <article class="blessing">
+                <header class="blessing-heading">
+                    <p class="blessing-kicker">月圆有时 · 想念无边</p>
+                    <span class="recipient" data-recipient>致 最牵挂的你</span>
+                    <h1 class="blessing-title">中秋<span class="accent">快乐</span></h1>
+                </header>
+                <div class="blessing-message">
+                    <span class="message-line">月圆人圆，事事团圆。</span>
+                    <span class="message-line">人顺心顺，万事皆顺。</span>
+                    <span class="message-line">愿月光所至，皆是坦途；</span>
+                    <span class="message-line">愿心中所念，皆有回响。</span>
+                </div>
+                <p class="blessing-signature"><span data-sender>来自 一轮照向你的满月</span></p>
+                <div class="blessing-actions">
+                    <button class="action-button" type="button" data-page-action="copy">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
+                        复制祝福
+                    </button>
+                    <a class="action-button" href="index.html">
+                        选择另一封
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                    </a>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <script src="assets/blessing.js"></script>
+</body>
+</html>

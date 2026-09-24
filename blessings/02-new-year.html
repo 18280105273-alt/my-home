@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#29080c">
+    <meta name="description" content="一封点亮新岁的烟火祝福">
+    <title>新年快乐 · 新岁启封</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/blessing.css">
+</head>
+<body data-theme="new-year">
+    <canvas id="fx" class="fx-canvas" aria-hidden="true"></canvas>
+    <div class="sky-art" aria-hidden="true"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <section class="cover" aria-labelledby="cover-title">
+        <div class="cover-inner">
+            <p class="cover-kicker">New Year · 岁序更新</p>
+            <div class="cover-emblem" aria-hidden="true"></div>
+            <h1 id="cover-title" class="cover-title">新岁启封，万事胜意</h1>
+            <p class="cover-subtitle">烟火已经点亮，新一年的好运正在向你奔来。</p>
+            <button class="open-button" type="button">
+                点亮新岁
+                <span class="open-button-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                </span>
+            </button>
+            <p class="cover-hint">愿新的一年，日日有光亮</p>
+        </div>
+    </section>
+
+    <main class="site-shell">
+        <section class="world">
+            <article class="blessing">
+                <header class="blessing-heading">
+                    <p class="blessing-kicker">一元复始 · 万象更新</p>
+                    <span class="recipient" data-recipient>致 奔赴热爱的你</span>
+                    <h1 class="blessing-title">新年<span class="accent">快乐</span></h1>
+                </header>
+                <div class="blessing-message">
+                    <span class="message-line">愿旧事翻篇，遗憾清零。</span>
+                    <span class="message-line">愿新岁明朗，万物可期。</span>
+                    <span class="message-line">愿你眼中有星光，脚下有远方，</span>
+                    <span class="message-line">所行皆坦途，所愿皆成真。</span>
+                </div>
+                <p class="blessing-signature"><span data-sender>来自 新年的第一束烟火</span></p>
+                <div class="blessing-actions">
+                    <button class="action-button" type="button" data-page-action="copy">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
+                        复制祝福
+                    </button>
+                    <a class="action-button" href="index.html">
+                        选择另一封
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+                    </a>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <script src="assets/blessing.js"></script>
+</body>
+</html>
