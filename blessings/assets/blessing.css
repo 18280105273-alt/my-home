@@ -467,7 +467,7 @@ body.opened .word-field {
     will-change: transform;
 }
 
-body.opened .heart-stage {
+body.opened.mode-innovation .heart-stage {
     animation: shared-heart-turn 16s ease-in-out infinite alternate;
 }
 
@@ -502,14 +502,21 @@ body.opened .heart-stage {
     font-weight: 600;
     line-height: 1;
     letter-spacing: 0.08em;
-    opacity: 0.78;
-    translate: 0 0 var(--z, 0);
-    text-shadow: 0 0 2px rgba(255, 255, 255, 0.14);
+    opacity: 1;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.42);
     white-space: nowrap;
     transform: translateY(-100%) rotateZ(-30deg);
     transform-style: preserve-3d;
     backface-visibility: visible;
     text-rendering: geometricPrecision;
+}
+
+body.mode-innovation .heart-word {
+    font-size: var(--word-size, 26px);
+    font-weight: 700;
+    opacity: 0.78;
+    translate: 0 0 var(--z, 0);
+    text-shadow: 0 0 2px rgba(255, 255, 255, 0.14);
     will-change: translate, opacity;
     animation: shared-word-depth 5.2s ease-in-out infinite alternate;
 }
@@ -522,6 +529,11 @@ body.opened .heart-stage {
 body[data-theme="mothers-day"] .heart-word,
 body[data-theme="peace"] .heart-word {
     color: color-mix(in srgb, var(--word-color, var(--accent)) 72%, #274b4a);
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.46);
+}
+
+body.mode-innovation[data-theme="mothers-day"] .heart-word,
+body.mode-innovation[data-theme="peace"] .heart-word {
     text-shadow: 0 0 2px rgba(255, 255, 255, 0.28);
 }
 
@@ -791,6 +803,66 @@ body.opened .message-line:nth-child(4) {
 .toast.is-visible {
     opacity: 1;
     transform: translate(-50%, 0);
+}
+
+.mode-switch {
+    position: fixed;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    left: 50%;
+    z-index: 90;
+    display: flex;
+    gap: 3px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(8, 10, 16, 0.6);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate(-50%, 12px);
+    backdrop-filter: blur(16px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+body.opened .mode-switch {
+    opacity: 0.58;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+}
+
+.mode-switch:hover,
+.mode-switch:focus-within {
+    opacity: 1;
+}
+
+.mode-option {
+    min-width: 62px;
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 999px;
+    color: var(--muted);
+    background: transparent;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: color 0.25s ease, background 0.25s ease, transform 0.25s ease;
+}
+
+.mode-option:hover {
+    color: var(--ink);
+}
+
+.mode-option[aria-pressed="true"] {
+    color: #141318;
+    background: var(--accent);
+}
+
+.mode-option:active {
+    transform: scale(0.96);
 }
 
 /* 中秋月色 */
@@ -1126,7 +1198,7 @@ body[data-theme="fathers-day"] .blessing {
 
 body[data-theme="fathers-day"] .blessing::after {
     position: absolute;
-    right: -4%;
+    right: 0;
     bottom: -26%;
     width: 52%;
     height: 160px;
@@ -1212,23 +1284,23 @@ body[data-theme="peace"] .toast {
     color: #f5fffc;
 }
 
-body[data-theme="mid-autumn"] .heart-stage {
+body.mode-innovation[data-theme="mid-autumn"] .heart-stage {
     animation: heart-mid-autumn 18s ease-in-out infinite alternate;
 }
 
-body[data-theme="new-year"] .heart-stage {
+body.mode-innovation[data-theme="new-year"] .heart-stage {
     animation: heart-new-year 12s cubic-bezier(0.65, 0, 0.35, 1) infinite;
 }
 
-body[data-theme="birthday"] .heart-stage {
+body.mode-innovation[data-theme="birthday"] .heart-stage {
     animation: heart-birthday 13s linear infinite;
 }
 
-body[data-theme="valentine"] .heart-stage {
+body.mode-innovation[data-theme="valentine"] .heart-stage {
     animation: heart-valentine 3.8s ease-in-out infinite;
 }
 
-body[data-theme="graduation"] .heart-stage {
+body.mode-innovation[data-theme="graduation"] .heart-stage {
     animation: heart-graduation 14s ease-in-out infinite alternate;
 }
 

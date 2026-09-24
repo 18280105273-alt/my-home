@@ -1468,6 +1468,30 @@
         button.setAttribute("aria-label", audio.enabled ? "关闭背景音乐" : "打开背景音乐");
     }
 
+    function setMode(mode) {
+        const innovation = mode === "innovation";
+        body.classList.toggle("mode-clone", !innovation);
+        body.classList.toggle("mode-innovation", innovation);
+        document.querySelectorAll(".mode-option").forEach((button) => {
+            button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+        });
+    }
+
+    function injectModeSwitch() {
+        const modeSwitch = document.createElement("div");
+        modeSwitch.className = "mode-switch";
+        modeSwitch.setAttribute("role", "group");
+        modeSwitch.setAttribute("aria-label", "动画模式");
+        modeSwitch.innerHTML = `
+            <button class="mode-option" type="button" data-mode="clone" aria-pressed="true">复刻</button>
+            <button class="mode-option" type="button" data-mode="innovation" aria-pressed="false">创新</button>
+        `;
+        document.body.appendChild(modeSwitch);
+        modeSwitch.querySelectorAll(".mode-option").forEach((button) => {
+            button.addEventListener("click", () => setMode(button.dataset.mode));
+        });
+    }
+
     function showToast(message) {
         if (!toast) {
             return;
@@ -1664,7 +1688,9 @@
     }
 
     function init() {
+        setMode("clone");
         injectToolbar();
+        injectModeSwitch();
         personalize();
         audio.prepare();
         resize();
