@@ -145,12 +145,32 @@
         .heart-shell {
             position: absolute;
             inset: 0;
+            opacity: 1;
             transform-style: preserve-3d;
             will-change: transform;
         }
 
         body.opened.mode-innovation .heart-shell {
             animation: heart-turn 15s ease-in-out infinite alternate;
+        }
+
+        .heart-shell-mid,
+        .heart-shell-back {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            transform-style: preserve-3d;
+        }
+
+        body.opened.mode-innovation .heart-shell-mid {
+            opacity: 0.42;
+            animation: heart-turn-mid 10s ease-in-out infinite alternate;
+        }
+
+        body.opened.mode-innovation .heart-shell-back {
+            opacity: 0.2;
+            animation: heart-turn-back 14s ease-in-out infinite alternate;
         }
 
         .love {
@@ -329,6 +349,40 @@
             }
         }
 
+        @keyframes heart-turn-mid {
+            0% {
+                transform: rotateX(-8deg) rotateY(30deg) rotateZ(4deg) scale(0.82);
+                translate: -18px 8px -120px;
+            }
+
+            50% {
+                transform: rotateX(4deg) rotateY(-4deg) rotateZ(-4deg) scale(1.06);
+                translate: 12px -8px -60px;
+            }
+
+            100% {
+                transform: rotateX(-5deg) rotateY(-32deg) rotateZ(3deg) scale(0.88);
+                translate: 20px 9px -105px;
+            }
+        }
+
+        @keyframes heart-turn-back {
+            0% {
+                transform: rotateX(8deg) rotateY(-38deg) scale(1.25);
+                translate: 22px -10px -240px;
+            }
+
+            50% {
+                transform: rotateX(-6deg) rotateY(6deg) scale(1.1);
+                translate: -16px 8px -170px;
+            }
+
+            100% {
+                transform: rotateX(7deg) rotateY(40deg) scale(1.3);
+                translate: -24px -8px -225px;
+            }
+        }
+
         @keyframes word-depth {
             from {
                 opacity: 0.74;
@@ -472,6 +526,14 @@
                 top: 51%;
                 left: 47%;
             }
+
+            .heart-shell-back {
+                display: none;
+            }
+
+            body.opened.mode-innovation .heart-shell-mid {
+                opacity: 0.32;
+            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -498,6 +560,8 @@
         <div id="heart-ui" class="heart-ui" aria-hidden="true">
             <div class="heart-scale">
                 <div id="heart-shell" class="heart-shell"></div>
+                <div id="heart-shell-mid" class="heart-shell-mid" aria-hidden="true"></div>
+                <div id="heart-shell-back" class="heart-shell-back" aria-hidden="true"></div>
             </div>
         </div>
         <div id="print-text" class="print-text"></div>
@@ -515,6 +579,8 @@
             const entryButton = document.querySelector(".entry-button");
             const heartUi = document.querySelector("#heart-ui");
             const heartShell = document.querySelector("#heart-shell");
+            const heartShellMid = document.querySelector("#heart-shell-mid");
+            const heartShellBack = document.querySelector("#heart-shell-back");
             const modeOptions = Array.from(document.querySelectorAll(".mode-option"));
             const printNode = document.querySelector("#print-text");
             const bgm = document.querySelector("#bgm");
@@ -598,32 +664,35 @@
             let typeTimer = 0;
 
             function buildHeart() {
-                const fragment = document.createDocumentFragment();
-                for (let index = 0; index < 100; index += 1) {
-                    const love = document.createElement("span");
-                    const horizontal = document.createElement("span");
-                    const vertical = document.createElement("span");
-                    const word = document.createElement("span");
-                    const delay = `${(index + 1) * -0.3}s`;
+                [heartShell, heartShellMid, heartShellBack].forEach((shell, layerIndex) => {
+                    const fragment = document.createDocumentFragment();
+                    for (let index = 0; index < 100; index += 1) {
+                        const love = document.createElement("span");
+                        const horizontal = document.createElement("span");
+                        const vertical = document.createElement("span");
+                        const word = document.createElement("span");
+                        const wordIndex = (index + layerIndex * 9) % text.length;
+                        const delay = `${(index + 1) * -0.3 - layerIndex * 0.2}s`;
 
-                    love.className = "love";
-                    horizontal.className = "love-horizontal";
-                    vertical.className = "love-vertical";
-                    word.className = "love-word";
-                    word.textContent = text[index % text.length];
-                    word.style.setProperty("--word-color", colors[index % colors.length]);
-                    word.style.setProperty("--z", `${-190 + ((index * 47) % 380)}px`);
-                    word.style.setProperty("--pop", `${62 + (index % 6) * 22}px`);
-                    word.style.setProperty("--word-size", `${24 + (index % 4) * 2}px`);
-                    word.style.animationDelay = `${(index % 11) * -0.47}s`;
-                    horizontal.style.animationDelay = delay;
-                    vertical.style.animationDelay = delay;
-                    vertical.appendChild(word);
-                    horizontal.appendChild(vertical);
-                    love.appendChild(horizontal);
-                    fragment.appendChild(love);
-                }
-                heartShell.replaceChildren(fragment);
+                        love.className = "love";
+                        horizontal.className = "love-horizontal";
+                        vertical.className = "love-vertical";
+                        word.className = "love-word";
+                        word.textContent = text[wordIndex];
+                        word.style.setProperty("--word-color", colors[(index + layerIndex) % colors.length]);
+                        word.style.setProperty("--z", `${-190 + ((index * 47) % 380) - layerIndex * 80}px`);
+                        word.style.setProperty("--pop", `${62 + ((index + layerIndex) % 6) * 22}px`);
+                        word.style.setProperty("--word-size", `${24 + ((index + layerIndex) % 4) * 2}px`);
+                        word.style.animationDelay = `${(index % 11) * -0.47 - layerIndex * 0.33}s`;
+                        horizontal.style.animationDelay = delay;
+                        vertical.style.animationDelay = delay;
+                        vertical.appendChild(word);
+                        horizontal.appendChild(vertical);
+                        love.appendChild(horizontal);
+                        fragment.appendChild(love);
+                    }
+                    shell.replaceChildren(fragment);
+                });
             }
 
             function setMode(mode) {

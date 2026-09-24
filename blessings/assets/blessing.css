@@ -865,6 +865,85 @@ body.opened .mode-switch {
     transform: scale(0.96);
 }
 
+.heart-layer {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    transform-style: preserve-3d;
+}
+
+.heart-layer:first-child {
+    opacity: 1;
+}
+
+body.opened.mode-innovation .heart-layer {
+    opacity: 1;
+}
+
+body.opened.mode-innovation .heart-layer:nth-child(2) {
+    opacity: 0.46;
+    animation: heart-layer-mid 9s ease-in-out infinite alternate;
+}
+
+body.opened.mode-innovation .heart-layer:nth-child(3) {
+    opacity: 0.24;
+    animation: heart-layer-back 13s ease-in-out infinite alternate;
+}
+
+body.mode-clone {
+    color: #fff;
+    background: #000 !important;
+}
+
+body.mode-clone::before,
+body.mode-clone::after,
+body.mode-clone .sky-art,
+body.mode-clone .fx-canvas,
+body.mode-clone .blessing::before,
+body.mode-clone .blessing::after {
+    display: none !important;
+}
+
+body.mode-clone .cover {
+    background: #000;
+}
+
+body.mode-clone .cover::before,
+body.mode-clone .cover::after,
+body.mode-clone .cover-emblem {
+    display: none;
+}
+
+body.mode-clone .blessing-kicker,
+body.mode-clone .recipient,
+body.mode-clone .blessing-message,
+body.mode-clone .blessing-signature {
+    color: rgba(255, 255, 255, 0.76);
+}
+
+body.mode-clone .heart-word {
+    color: #ea80b0 !important;
+    font-size: 26px !important;
+    font-weight: 600;
+    opacity: 1;
+    translate: none;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.42);
+    animation: none !important;
+}
+
+body.mode-clone .heart-orbit:last-child .heart-word {
+    color: #fff !important;
+    font-size: 28px !important;
+    text-shadow: 0 0 7px rgba(234, 128, 176, 0.72);
+}
+
+body.mode-clone .action-button,
+body.mode-clone .toolbar,
+body.mode-clone .mode-switch {
+    background: rgba(10, 10, 10, 0.66);
+}
+
 /* 中秋月色 */
 body[data-theme="mid-autumn"] .cover-emblem {
     border-radius: 50%;
@@ -1327,6 +1406,40 @@ body.mode-innovation[data-theme="graduation"] .heart-stage {
     to {
         opacity: 1;
         translate: 0 0 calc(var(--z, 0px) + var(--pop, 70px));
+    }
+}
+
+@keyframes heart-layer-mid {
+    0% {
+        transform: rotateY(-24deg) rotateZ(-4deg) scale(0.84);
+        translate: -12px 4px -130px;
+    }
+
+    50% {
+        transform: rotateY(8deg) rotateZ(3deg) scale(1.02);
+        translate: 8px -6px -60px;
+    }
+
+    100% {
+        transform: rotateY(25deg) rotateZ(-3deg) scale(0.9);
+        translate: 14px 8px -110px;
+    }
+}
+
+@keyframes heart-layer-back {
+    0% {
+        transform: rotateY(28deg) rotateX(-8deg) scale(1.18);
+        translate: 14px -8px -220px;
+    }
+
+    50% {
+        transform: rotateY(-4deg) rotateX(5deg) scale(1.05);
+        translate: -10px 5px -160px;
+    }
+
+    100% {
+        transform: rotateY(-28deg) rotateX(-5deg) scale(1.22);
+        translate: -16px -5px -210px;
     }
 }
 

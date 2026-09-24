@@ -506,28 +506,38 @@
 
         const stage = document.createElement("div");
         stage.className = "heart-stage";
+        const layerCount = reduceMotion ? 1 : width < 720 ? 2 : 3;
 
         wordNodes = [];
-        Array.from({ length: count }, (_, index) => {
-            const orbit = document.createElement("span");
-            const vertical = document.createElement("span");
-            const node = document.createElement("span");
-            const word = sourceWords[index % sourceWords.length];
-            const delay = `${(index + 1) * -0.3}s`;
-            orbit.className = "heart-orbit";
-            vertical.className = "heart-vertical";
-            node.className = "heart-word";
-            node.textContent = word;
-            node.style.setProperty("--word-color", palette[index % palette.length]);
-            node.style.setProperty("--z", `${-170 + ((index * 47) % 340)}px`);
-            node.style.setProperty("--pop", `${58 + (index % 6) * 20}px`);
-            node.style.setProperty("--word-size", `${24 + (index % 4) * 2}px`);
-            node.style.animationDelay = `${(index % 11) * -0.47}s`;
-            orbit.style.animationDelay = delay;
-            vertical.style.animationDelay = delay;
-            vertical.appendChild(node);
-            orbit.appendChild(vertical);
-            stage.appendChild(orbit);
+        Array.from({ length: layerCount }, (_, layerIndex) => {
+            const layer = document.createElement("div");
+            layer.className = "heart-layer";
+
+            Array.from({ length: count }, (_, index) => {
+                const orbit = document.createElement("span");
+                const vertical = document.createElement("span");
+                const node = document.createElement("span");
+                const wordIndex = (index + layerIndex * 7) % sourceWords.length;
+                const word = sourceWords[wordIndex];
+                const delay = `${(index + 1) * -0.3 - layerIndex * 0.18}s`;
+                orbit.className = "heart-orbit";
+                vertical.className = "heart-vertical";
+                node.className = "heart-word";
+                node.textContent = word;
+                node.style.setProperty("--word-color", palette[(index + layerIndex) % palette.length]);
+                node.style.setProperty("--z", `${-170 + ((index * 47) % 340) - layerIndex * 70}px`);
+                node.style.setProperty("--pop", `${58 + ((index + layerIndex) % 6) * 20}px`);
+                node.style.setProperty("--word-size", `${24 + ((index + layerIndex) % 4) * 2}px`);
+                node.style.animationDelay = `${(index % 11) * -0.47 - layerIndex * 0.31}s`;
+                orbit.style.animationDelay = delay;
+                vertical.style.animationDelay = delay;
+                vertical.appendChild(node);
+                orbit.appendChild(vertical);
+                layer.appendChild(orbit);
+            });
+
+            stage.appendChild(layer);
+            return layer;
         });
 
         wordField.appendChild(stage);
@@ -578,7 +588,8 @@
 
         const centerX = width * 0.5;
         const centerY = height * 0.5;
-        const pulse = 1 + beatPulse * 0.14 + impactPulse * 0.22;
+        const innovationBoost = body.classList.contains("mode-innovation") ? 1.55 : 1;
+        const pulse = 1 + (beatPulse * 0.16 + impactPulse * 0.26) * innovationBoost;
         const baseRadius = Math.min(width, height) * 0.19;
 
         ctx.save();
@@ -595,8 +606,9 @@
         ctx.arc(0, 0, baseRadius * 2.4 * pulse, 0, Math.PI * 2);
         ctx.fill();
 
-        for (let ray = 0; ray < 22; ray += 1) {
-            const angle = (ray / 22) * Math.PI * 2;
+        const rayCount = body.classList.contains("mode-innovation") ? 34 : 22;
+        for (let ray = 0; ray < rayCount; ray += 1) {
+            const angle = (ray / rayCount) * Math.PI * 2;
             const inner = baseRadius * (0.48 + Math.sin(elapsed * 0.001 + ray) * 0.04);
             const outer = baseRadius * (1.5 + (ray % 3) * 0.13) * pulse;
             ctx.globalAlpha = 0.024 + (ray % 4) * 0.009;
@@ -1475,6 +1487,21 @@
         document.querySelectorAll(".mode-option").forEach((button) => {
             button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
         });
+
+        if (innovation && body.classList.contains("opened") && !reduceMotion) {
+            const kind = ["new-year", "fathers-day"].includes(theme)
+                ? "spark"
+                : theme === "valentine"
+                    ? "heart"
+                    : theme === "peace"
+                        ? "bubble"
+                        : "confetti";
+            beatPulse = 1;
+            impactPulse = 1;
+            spiralBurst(width * 0.5, height * 0.48, 180, kind);
+            spawnShockwave(width * 0.5, height * 0.48);
+            window.setTimeout(() => spiralBurst(width * 0.5, height * 0.48, 120, kind), 260);
+        }
     }
 
     function injectModeSwitch() {
