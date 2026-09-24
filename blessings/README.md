@@ -6,7 +6,7 @@
 
 | 页面 | 主题 | 文件 |
 | --- | --- | --- |
-| 复刻 | 百词爱心立体动画 | `reference-clone.html` |
+| 融合 | 百词爱心复刻与立体创新双模式 | `reference-clone.html` |
 | 01 | 中秋祝福 | `01-mid-autumn.html` |
 | 02 | 新年祝福 | `02-new-year.html` |
 | 03 | 生日祝福 | `03-birthday.html` |

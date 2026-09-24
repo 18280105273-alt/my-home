@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
-    <title>中秋节快乐</title>
+    <title>中秋祝福 · 复刻与创新</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
     <style>
         * {
@@ -149,7 +149,7 @@
             will-change: transform;
         }
 
-        body.opened .heart-shell {
+        body.opened.mode-innovation .heart-shell {
             animation: heart-turn 15s ease-in-out infinite alternate;
         }
 
@@ -180,20 +180,28 @@
 
         .love-word {
             position: absolute;
-            color: #ff9fc3;
-            font-size: var(--word-size, 26px);
-            font-weight: 700;
+            color: #ea80b0;
+            font-size: 26px;
+            font-weight: 600;
             line-height: 1;
             letter-spacing: 2px;
-            opacity: 0.72;
-            translate: 0 0 var(--z, 0);
-            text-shadow: 0 0 2px rgba(255, 255, 255, 0.18);
+            opacity: 1;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.42);
             white-space: nowrap;
             transform: translateY(-100%) rotateZ(-30deg);
             transform-style: preserve-3d;
             backface-visibility: visible;
             text-rendering: geometricPrecision;
             -webkit-font-smoothing: antialiased;
+        }
+
+        body.mode-innovation .love-word {
+            color: var(--word-color, #ff9fc3);
+            font-size: var(--word-size, 26px);
+            font-weight: 700;
+            opacity: 0.72;
+            translate: 0 0 var(--z, 0);
+            text-shadow: 0 0 2px rgba(255, 255, 255, 0.18);
             will-change: translate, opacity;
             animation: word-depth 5.2s ease-in-out infinite alternate;
         }
@@ -231,16 +239,60 @@
             animation: cursor 0.8s step-end infinite;
         }
 
-        .sound-hint {
+        .mode-switch {
             position: fixed;
-            right: 18px;
+            left: 50%;
             bottom: max(16px, env(safe-area-inset-bottom));
             z-index: 8;
-            margin: 0;
-            color: rgba(255, 255, 255, 0.48);
+            display: flex;
+            gap: 3px;
+            padding: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 999px;
+            background: rgba(8, 8, 8, 0.62);
+            box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+            opacity: 0;
+            transform: translate(-50%, 12px);
+            backdrop-filter: blur(16px);
+            transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+
+        body.opened .mode-switch {
+            opacity: 0.56;
+            transform: translate(-50%, 0);
+        }
+
+        .mode-switch:hover,
+        .mode-switch:focus-within {
+            opacity: 1;
+        }
+
+        .mode-option {
+            min-width: 62px;
+            height: 32px;
+            padding: 0 12px;
+            border: 0;
+            border-radius: 999px;
+            color: rgba(255, 255, 255, 0.72);
+            background: transparent;
             font-size: 11px;
-            letter-spacing: 0.12em;
-            pointer-events: none;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+            transition: color 0.25s ease, background 0.25s ease, transform 0.25s ease;
+        }
+
+        .mode-option:hover {
+            color: #fff;
+        }
+
+        .mode-option[aria-pressed="true"] {
+            color: #181018;
+            background: #f3e6ef;
+        }
+
+        .mode-option:active {
+            transform: scale(0.96);
         }
 
         @keyframes heart-arrive {
@@ -432,7 +484,7 @@
         }
     </style>
 </head>
-<body>
+<body class="mode-clone">
     <audio id="bgm" src="assets/audio/piano-bgm.mp3" preload="auto" loop playsinline></audio>
 
     <section class="entry" aria-label="开启中秋祝福">
@@ -449,7 +501,10 @@
             </div>
         </div>
         <div id="print-text" class="print-text"></div>
-        <p class="sound-hint">点击任意位置重新播放音乐</p>
+        <div class="mode-switch" role="group" aria-label="动画模式">
+            <button class="mode-option" type="button" data-mode="clone" aria-pressed="true">复刻</button>
+            <button class="mode-option" type="button" data-mode="innovation" aria-pressed="false">创新</button>
+        </div>
     </main>
 
     <script>
@@ -460,9 +515,11 @@
             const entryButton = document.querySelector(".entry-button");
             const heartUi = document.querySelector("#heart-ui");
             const heartShell = document.querySelector("#heart-shell");
+            const modeOptions = Array.from(document.querySelectorAll(".mode-option"));
             const printNode = document.querySelector("#print-text");
             const bgm = document.querySelector("#bgm");
             const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            const colors = ["#ffffff", "#ea80b0", "#ffc5dc", "#f5d477", "#8dd8c6", "#9fc9f2"];
             const text = [
                 "I love you",
                 "je t'aime",
@@ -554,6 +611,7 @@
                     vertical.className = "love-vertical";
                     word.className = "love-word";
                     word.textContent = text[index % text.length];
+                    word.style.setProperty("--word-color", colors[index % colors.length]);
                     word.style.setProperty("--z", `${-190 + ((index * 47) % 380)}px`);
                     word.style.setProperty("--pop", `${62 + (index % 6) * 22}px`);
                     word.style.setProperty("--word-size", `${24 + (index % 4) * 2}px`);
@@ -566,6 +624,15 @@
                     fragment.appendChild(love);
                 }
                 heartShell.replaceChildren(fragment);
+            }
+
+            function setMode(mode) {
+                const innovation = mode === "innovation";
+                body.classList.toggle("mode-clone", !innovation);
+                body.classList.toggle("mode-innovation", innovation);
+                modeOptions.forEach((button) => {
+                    button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+                });
             }
 
             function fitHeart() {
@@ -609,6 +676,9 @@
             }
 
             entryButton.addEventListener("click", open);
+            modeOptions.forEach((button) => {
+                button.addEventListener("click", () => setMode(button.dataset.mode));
+            });
             window.addEventListener("resize", fitHeart, { passive: true });
             window.addEventListener("orientationchange", () => window.setTimeout(fitHeart, 80));
             document.addEventListener("click", () => {
@@ -619,6 +689,7 @@
 
             buildHeart();
             fitHeart();
+            setMode("clone");
         })();
     </script>
 </body>
