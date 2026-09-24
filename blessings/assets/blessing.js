@@ -68,7 +68,7 @@
     }
 
     function seedScene() {
-        const target = clamp(Math.round(width * height * settings.count), 54, reduceMotion ? 72 : 220);
+        const target = clamp(Math.round(width * height * settings.count * 0.24), 26, reduceMotion ? 48 : 96);
         particles = Array.from({ length: target }, (_, index) => makeParticle(settings.kinds[index % settings.kinds.length], true));
         buildStars();
     }
@@ -472,10 +472,9 @@
     }
 
     function createWordHeart() {
-        const sourceWords = [
+        const commonWords = [
             "平安",
             "喜乐",
-            "团圆",
             "顺遂",
             "好运",
             "如愿",
@@ -486,28 +485,52 @@
             "闪光",
             "美好",
         ];
-        const count = reduceMotion ? 28 : clamp(Math.round(Math.min(width, height) / 13), 38, 56);
+        const themeWords = {
+            "mid-autumn": ["团圆", "月圆", "清辉", "花好月圆", "中秋快乐"],
+            "new-year": ["新岁", "胜意", "启封", "岁岁欢愉", "新年快乐"],
+            birthday: ["生日快乐", "发光", "热烈", "自在生长", "岁岁闪耀"],
+            valentine: ["心动", "相伴", "喜欢", "久处仍怦然", "一直爱你"],
+            "mothers-day": ["妈妈", "温柔", "安康", "笑口常开", "节日快乐"],
+            "fathers-day": ["爸爸", "如山", "沉稳", "平安顺遂", "节日快乐"],
+            graduation: ["前程似锦", "毕业快乐", "山海", "来日方长", "一路生花"],
+            thanksgiving: ["感恩", "相遇", "陪伴", "温暖同行", "谢谢你"],
+            anniversary: ["周年快乐", "纪念", "并肩", "岁岁常相见", "一直在一起"],
+            peace: ["平安喜乐", "日日有光", "顺意", "无忧", "万事胜意"],
+        };
+        const sourceWords = [...(themeWords[theme] || []), ...commonWords];
+        const count = reduceMotion ? 36 : 100;
 
         wordField = document.createElement("div");
         wordField.className = "word-field";
         wordField.setAttribute("aria-hidden", "true");
 
-        wordNodes = Array.from({ length: count }, (_, index) => {
+        const stage = document.createElement("div");
+        stage.className = "heart-stage";
+
+        wordNodes = [];
+        Array.from({ length: count }, (_, index) => {
+            const orbit = document.createElement("span");
+            const vertical = document.createElement("span");
             const node = document.createElement("span");
             const word = sourceWords[index % sourceWords.length];
-            node.className = "word-chip";
+            const delay = `${(index + 1) * -0.3}s`;
+            orbit.className = "heart-orbit";
+            vertical.className = "heart-vertical";
+            node.className = "heart-word";
             node.textContent = word;
             node.style.setProperty("--word-color", palette[index % palette.length]);
-            node.style.setProperty("--word-delay", `${(index % 12) * -0.19}s`);
-            wordField.appendChild(node);
-            return {
-                node,
-                angle: (index / count) * Math.PI * 2,
-                phase: random(0, Math.PI * 2),
-                twist: random(0.72, 1.28),
-            };
+            node.style.setProperty("--z", `${-170 + ((index * 47) % 340)}px`);
+            node.style.setProperty("--pop", `${58 + (index % 6) * 20}px`);
+            node.style.setProperty("--word-size", `${24 + (index % 4) * 2}px`);
+            node.style.animationDelay = `${(index % 11) * -0.47}s`;
+            orbit.style.animationDelay = delay;
+            vertical.style.animationDelay = delay;
+            vertical.appendChild(node);
+            orbit.appendChild(vertical);
+            stage.appendChild(orbit);
         });
 
+        wordField.appendChild(stage);
         document.querySelector(".blessing").prepend(wordField);
     }
 
@@ -538,36 +561,14 @@
         title.dataset.split = "true";
     }
 
-    function updateWordHeart(time) {
-        if (!wordField || !wordNodes.length) {
+    function updateWordHeart() {
+        if (!wordField) {
             return;
         }
 
-        const size = Math.min(width * 0.92, height * 0.82, 760);
-        const radius = size * 0.37;
-        const travel = time * 0.000075;
-        const yaw = Math.sin(time * 0.00016) * 0.72;
-        const energy = 1 + beatPulse * 0.07 + impactPulse * 0.11;
-
-        wordNodes.forEach((item) => {
-            const angle = item.angle + travel * item.twist;
-            const heartX = 16 * Math.pow(Math.sin(angle), 3);
-            const heartY = -(13 * Math.cos(angle) - 5 * Math.cos(2 * angle) - 2 * Math.cos(3 * angle) - Math.cos(4 * angle));
-            const x = (heartX * radius) / 17;
-            const baseY = (heartY * radius) / 17;
-            const z = Math.sin(angle * 2 + item.phase) * radius * 0.16;
-            const rotatedX = x * Math.cos(yaw) - z * Math.sin(yaw);
-            const depth = (z * Math.cos(yaw) + x * Math.sin(yaw)) / (radius || 1);
-            const scale = (0.72 + (depth + 0.3) * 0.42) * energy;
-            const opacity = clamp(0.28 + (depth + 0.38) * 0.62, 0.16, 0.86);
-
-            item.node.style.opacity = String(opacity);
-            item.node.style.transform =
-                `translate(-50%, -50%) translate3d(${rotatedX}px, ${baseY}px, 0) ` +
-                `rotate(${Math.sin(angle * 2) * 12}deg) scale(${clamp(scale, 0.55, 1.35)})`;
-        });
-
-        wordField.style.transform = `translateZ(0) rotate(${Math.sin(time * 0.00018) * 3}deg)`;
+        const baseScale = clamp(Math.min((width - 18) / 620, (height - 18) / 620), 0.54, 1);
+        const energy = 1 + beatPulse * 0.035 + impactPulse * 0.06;
+        wordField.style.setProperty("--heart-scale", (baseScale * energy).toFixed(3));
     }
 
     function drawCinematicCore() {
@@ -742,26 +743,26 @@
 
         if (!reduceMotion && elapsed > nextBurst) {
             if (theme === "new-year") {
-                burst(random(width * 0.15, width * 0.85), random(height * 0.12, height * 0.48), 44, "spark");
-                nextBurst = elapsed + random(1100, 2100);
+                burst(random(width * 0.15, width * 0.85), random(height * 0.12, height * 0.48), 26, "spark");
+                nextBurst = elapsed + random(2200, 3300);
             } else if (theme === "birthday" || theme === "graduation") {
-                burst(random(width * 0.12, width * 0.88), random(height * 0.08, height * 0.3), 30, "confetti");
-                nextBurst = elapsed + random(2100, 3500);
+                burst(random(width * 0.12, width * 0.88), random(height * 0.08, height * 0.3), 18, "confetti");
+                nextBurst = elapsed + random(3000, 4600);
             } else if (theme === "valentine") {
-                burst(random(width * 0.12, width * 0.88), random(height * 0.24, height * 0.76), 18, "heart");
-                nextBurst = elapsed + random(1500, 2500);
+                burst(random(width * 0.12, width * 0.88), random(height * 0.24, height * 0.76), 10, "heart");
+                nextBurst = elapsed + random(2600, 4100);
             } else if (theme === "mid-autumn") {
-                burst(random(width * 0.12, width * 0.88), random(height * 0.18, height * 0.65), 15, "firefly");
-                nextBurst = elapsed + random(1400, 2400);
+                burst(random(width * 0.12, width * 0.88), random(height * 0.18, height * 0.65), 8, "firefly");
+                nextBurst = elapsed + random(4300, 6200);
             } else if (theme === "mothers-day" || theme === "thanksgiving") {
-                burst(random(width * 0.08, width * 0.92), random(height * 0.08, height * 0.4), 20, theme === "mothers-day" ? "petal" : "leaf");
-                nextBurst = elapsed + random(1800, 2900);
+                burst(random(width * 0.08, width * 0.92), random(height * 0.08, height * 0.4), 12, theme === "mothers-day" ? "petal" : "leaf");
+                nextBurst = elapsed + random(3200, 4800);
             } else if (theme === "anniversary" || theme === "peace") {
-                burst(random(width * 0.12, width * 0.88), random(height * 0.18, height * 0.72), 18, theme === "anniversary" ? "rose" : "bubble");
-                nextBurst = elapsed + random(1700, 2800);
+                burst(random(width * 0.12, width * 0.88), random(height * 0.18, height * 0.72), 10, theme === "anniversary" ? "rose" : "bubble");
+                nextBurst = elapsed + random(3300, 5000);
             } else {
-                burst(random(width * 0.1, width * 0.9), random(height * 0.12, height * 0.7), 20, "spark");
-                nextBurst = elapsed + random(1800, 3000);
+                burst(random(width * 0.1, width * 0.9), random(height * 0.12, height * 0.7), 10, "spark");
+                nextBurst = elapsed + random(3400, 5000);
             }
         }
     }
@@ -881,15 +882,15 @@
             this.pendingPlay = false;
             this.offsets = {
                 "mid-autumn": 0,
-                "new-year": 15,
-                birthday: 32,
-                valentine: 48,
-                "mothers-day": 65,
-                "fathers-day": 82,
-                graduation: 98,
-                thanksgiving: 115,
-                anniversary: 132,
-                peace: 150,
+                "new-year": 24,
+                birthday: 52,
+                valentine: 78,
+                "mothers-day": 104,
+                "fathers-day": 132,
+                graduation: 158,
+                thanksgiving: 184,
+                anniversary: 212,
+                peace: 238,
             };
             this.configs = {
                 "mid-autumn": {
@@ -1031,7 +1032,7 @@
             const element = document.createElement("audio");
             element.id = "bgm";
             element.className = "background-track";
-            element.src = "assets/audio/pop-bgm.mp3";
+            element.src = "assets/audio/piano-bgm.mp3";
             element.loop = true;
             element.preload = "auto";
             element.playsInline = true;
@@ -1116,7 +1117,7 @@
                 playPromise
                     .then(() => {
                         this.pendingPlay = false;
-                        this.fadeBackgroundTrack(0.86, restart ? 1350 : 650);
+                this.fadeBackgroundTrack(0.94, restart ? 1350 : 650);
                     })
                     .catch(() => {
                         this.pendingPlay = true;
@@ -1141,11 +1142,7 @@
                 this.context.resume().catch(() => {});
                 this.master.gain.cancelScheduledValues(now);
                 this.master.gain.setValueAtTime(0.0001, now);
-                this.master.gain.exponentialRampToValueAtTime(0.68, now + 0.08);
-                this.playWhoosh(now);
-                this.playImpact(now + 0.04);
-                this.playChime(this.degreeToFrequency(12, 1), now + 0.16, 0.2);
-                this.playChime(this.degreeToFrequency(7, 1), now + 0.31, 0.14);
+                this.master.gain.exponentialRampToValueAtTime(0.72, now + 0.08);
             }
             this.playBackgroundTrack(restart);
             return true;
@@ -1455,15 +1452,7 @@
         }
 
         effect(type = "tap") {
-            if (!this.enabled || !this.context) {
-                return;
-            }
-            const now = this.context.currentTime + 0.006;
-            const frequency = type === "tap"
-                ? this.degreeToFrequency(12 + Math.floor(random(0, 3)), 2)
-                : this.degreeToFrequency(7 + Math.floor(random(0, 5)), 1);
-            this.playChime(frequency, now, type === "tap" ? 0.045 : 0.07);
-            beatPulse = Math.max(beatPulse, 0.45);
+            beatPulse = Math.max(beatPulse, type === "tap" ? 0.36 : 0.52);
         }
     }
 

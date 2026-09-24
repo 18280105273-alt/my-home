@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <title>中秋节快乐</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            color: #fff;
+            font-family: "Dosis", "PingFang SC", "Microsoft YaHei", sans-serif;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        button {
+            color: inherit;
+            font: inherit;
+        }
+
+        .entry {
+            position: fixed;
+            inset: 0;
+            z-index: 30;
+            display: grid;
+            place-items: center;
+            padding: 30px;
+            background:
+                radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.08), transparent 25%),
+                #000;
+            transition: opacity 0.8s ease, visibility 0s linear 0.8s;
+        }
+
+        body.opened .entry {
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .entry-button {
+            display: flex;
+            width: min(86vw, 420px);
+            flex-direction: column;
+            align-items: center;
+            gap: 24px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .entry-copy {
+            margin: 0;
+            font-size: clamp(17px, 4.6vw, 21px);
+            line-height: 1.65;
+            text-align: center;
+        }
+
+        .envelope {
+            position: relative;
+            width: 170px;
+            height: 108px;
+            border-radius: 3px;
+            background: linear-gradient(145deg, #f4eee7, #d6cec6);
+            box-shadow: 0 0 28px rgba(255, 255, 255, 0.4);
+            animation: envelope-float 2.8s ease-in-out infinite;
+            transform-style: preserve-3d;
+        }
+
+        .envelope::before {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(145deg, #fff8f1, #cfc6bd);
+            clip-path: polygon(0 0, 50% 56%, 100% 0);
+            content: "";
+        }
+
+        .envelope::after {
+            position: absolute;
+            top: 27px;
+            left: calc(50% - 24px);
+            width: 48px;
+            height: 48px;
+            border-radius: 7px 0 7px 7px;
+            background: #d84c5a;
+            box-shadow: 0 0 20px rgba(216, 76, 90, 0.34);
+            content: "";
+            transform: rotate(45deg);
+        }
+
+        .scene {
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            overflow: hidden;
+            background: #000;
+            opacity: 0;
+            perspective: 1050px;
+            perspective-origin: 50% 50%;
+            transition: opacity 0.6s ease;
+        }
+
+        body.opened .scene {
+            opacity: 1;
+        }
+
+        .heart-ui {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            z-index: 2;
+            width: 560px;
+            height: 560px;
+            margin-top: -280px;
+            margin-left: -280px;
+            overflow: visible;
+            pointer-events: none;
+            transform-origin: center;
+            perspective: 1100px;
+            perspective-origin: 50% 50%;
+        }
+
+        .heart-scale {
+            position: absolute;
+            inset: 0;
+            scale: var(--heart-scale, 1);
+            transform-origin: center;
+            transform-style: preserve-3d;
+        }
+
+        body.opened .heart-scale {
+            animation: heart-arrive 1.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+
+        .heart-shell {
+            position: absolute;
+            inset: 0;
+            transform-style: preserve-3d;
+            will-change: transform;
+        }
+
+        body.opened .heart-shell {
+            animation: heart-turn 15s ease-in-out infinite alternate;
+        }
+
+        .love {
+            position: absolute;
+            top: 10%;
+            left: 10%;
+            width: 0;
+            height: 0;
+            transform-style: preserve-3d;
+        }
+
+        .love-horizontal {
+            position: absolute;
+            width: 0;
+            height: 0;
+            animation: horizontal 10s infinite alternate ease-in-out;
+            transform-style: preserve-3d;
+        }
+
+        .love-vertical {
+            position: absolute;
+            width: 0;
+            height: 0;
+            animation: vertical 20s infinite linear;
+            transform-style: preserve-3d;
+        }
+
+        .love-word {
+            position: absolute;
+            color: #ff9fc3;
+            font-size: var(--word-size, 26px);
+            font-weight: 700;
+            line-height: 1;
+            letter-spacing: 2px;
+            opacity: 0.72;
+            translate: 0 0 var(--z, 0);
+            text-shadow: 0 0 2px rgba(255, 255, 255, 0.18);
+            white-space: nowrap;
+            transform: translateY(-100%) rotateZ(-30deg);
+            transform-style: preserve-3d;
+            backface-visibility: visible;
+            text-rendering: geometricPrecision;
+            -webkit-font-smoothing: antialiased;
+            will-change: translate, opacity;
+            animation: word-depth 5.2s ease-in-out infinite alternate;
+        }
+
+        .love:last-child .love-word {
+            color: #fff;
+            font-size: 28px;
+            text-shadow: 0 0 7px rgba(234, 128, 176, 0.72);
+        }
+
+        .print-text {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 5;
+            width: min(100vw, 780px);
+            max-height: 42vh;
+            overflow: hidden;
+            padding: max(18px, env(safe-area-inset-top)) 22px 12px;
+            color: #fff;
+            font-size: clamp(19px, 5.5vw, 24px);
+            line-height: 1.72;
+            white-space: pre-wrap;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.7);
+        }
+
+        .print-text::after {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            margin-left: 2px;
+            background: rgba(255, 255, 255, 0.86);
+            vertical-align: -0.12em;
+            content: "";
+            animation: cursor 0.8s step-end infinite;
+        }
+
+        .sound-hint {
+            position: fixed;
+            right: 18px;
+            bottom: max(16px, env(safe-area-inset-bottom));
+            z-index: 8;
+            margin: 0;
+            color: rgba(255, 255, 255, 0.48);
+            font-size: 11px;
+            letter-spacing: 0.12em;
+            pointer-events: none;
+        }
+
+        @keyframes heart-arrive {
+            0% {
+                opacity: 0;
+                scale: var(--heart-scale-small, 0.42);
+                filter: blur(26px);
+            }
+
+            55% {
+                opacity: 1;
+                scale: var(--heart-scale-mid, 1.08);
+                filter: blur(0);
+            }
+
+            100% {
+                opacity: 1;
+                scale: var(--heart-scale, 1);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes heart-turn {
+            0% {
+                transform: rotateX(3deg) rotateY(-11deg) rotateZ(-1deg);
+            }
+
+            50% {
+                transform: rotateX(-2deg) rotateY(3deg) rotateZ(0.8deg) translateZ(24px);
+            }
+
+            100% {
+                transform: rotateX(2deg) rotateY(11deg) rotateZ(-0.8deg);
+            }
+        }
+
+        @keyframes word-depth {
+            from {
+                opacity: 0.74;
+                translate: 0 0 var(--z, 0);
+            }
+
+            to {
+                opacity: 1;
+                translate: 0 0 calc(var(--z, 0px) + var(--pop, 80px));
+            }
+        }
+
+        @keyframes horizontal {
+            from {
+                transform: translateX(0);
+            }
+
+            to {
+                transform: translateX(450px);
+            }
+        }
+
+        @keyframes vertical {
+            0% {
+                transform: translateY(180px);
+            }
+
+            10% {
+                transform: translateY(45px);
+            }
+
+            15% {
+                transform: translateY(4.5px);
+            }
+
+            18% {
+                transform: translateY(0);
+            }
+
+            20% {
+                transform: translateY(4.5px);
+            }
+
+            22% {
+                transform: translateY(34.61538px);
+            }
+
+            24% {
+                transform: translateY(64.28571px);
+            }
+
+            25% {
+                transform: translateY(112.5px);
+            }
+
+            26% {
+                transform: translateY(64.28571px);
+            }
+
+            28% {
+                transform: translateY(34.61538px);
+            }
+
+            30% {
+                transform: translateY(4.5px);
+            }
+
+            32% {
+                transform: translateY(0);
+            }
+
+            35% {
+                transform: translateY(4.5px);
+            }
+
+            40% {
+                transform: translateY(45px);
+            }
+
+            50% {
+                transform: translateY(180px);
+            }
+
+            71% {
+                transform: translateY(428.57143px);
+            }
+
+            72.5% {
+                transform: translateY(441.17647px);
+            }
+
+            75% {
+                transform: translateY(450px);
+            }
+
+            77.5% {
+                transform: translateY(441.17647px);
+            }
+
+            79% {
+                transform: translateY(428.57143px);
+            }
+
+            100% {
+                transform: translateY(180px);
+            }
+        }
+
+        @keyframes envelope-float {
+            0%,
+            100% {
+                transform: translateY(-4px);
+            }
+
+            50% {
+                transform: translateY(7px);
+            }
+        }
+
+        @keyframes cursor {
+            0%,
+            48% {
+                opacity: 1;
+            }
+
+            49%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .heart-ui {
+                width: 560px;
+                height: 560px;
+            }
+        }
+
+        @media (max-width: 620px) {
+            .heart-ui {
+                top: 51%;
+                left: 47%;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .love-horizontal,
+            .love-vertical,
+            .envelope {
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <audio id="bgm" src="assets/audio/piano-bgm.mp3" preload="auto" loop playsinline></audio>
+
+    <section class="entry" aria-label="开启中秋祝福">
+        <button class="entry-button" type="button">
+            <p class="entry-copy">🏮您有一条中秋祝福，请点击查看🏮</p>
+            <span class="envelope" aria-hidden="true"></span>
+        </button>
+    </section>
+
+    <main class="scene" aria-label="中秋祝福动画">
+        <div id="heart-ui" class="heart-ui" aria-hidden="true">
+            <div class="heart-scale">
+                <div id="heart-shell" class="heart-shell"></div>
+            </div>
+        </div>
+        <div id="print-text" class="print-text"></div>
+        <p class="sound-hint">点击任意位置重新播放音乐</p>
+    </main>
+
+    <script>
+        (() => {
+            "use strict";
+
+            const body = document.body;
+            const entryButton = document.querySelector(".entry-button");
+            const heartUi = document.querySelector("#heart-ui");
+            const heartShell = document.querySelector("#heart-shell");
+            const printNode = document.querySelector("#print-text");
+            const bgm = document.querySelector("#bgm");
+            const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            const text = [
+                "I love you",
+                "je t'aime",
+                "ich liebe dich",
+                "σεαγαπώseagapo",
+                "szertlek",
+                "taim i'ngra leat",
+                "mina armadtansind",
+                "mina rakastan sinua",
+                "ik zie u graag",
+                "Ti Amo",
+                "te amo vos amo",
+                "estevi milu",
+                "ik hou van jou",
+                "jeg elsker dig",
+                "eu amo-te",
+                "lingo gramo",
+                "tave myliu",
+                "te sakam",
+                "men seni sevirem",
+                "vivian",
+                "kocham cie",
+                "te tu be besc",
+                "ene ewwdechaly",
+                "milujite",
+                "khoi huk chau",
+                "volim te",
+                "chit pade",
+                "wise cas",
+                "bong salang oun",
+                "ninakupenda",
+                "saja kasih savdari",
+                "爱してる",
+                "사랑해",
+                "أُحِبُّكَ uħib:ukato",
+                "inhobbok",
+                "saya citamu",
+                "ma timilai maya",
+                "tora dost daram",
+                "jag älskar dig",
+                "seni seviyorum",
+                "eg elska tigi",
+                "em ye'u anh",
+                "te quiero",
+                "anh ye'u em",
+                "ic lufie þe",
+                "te amo",
+                "an unnaik",
+                "mahal kita",
+                "jag iskar dig",
+                "kiahoahai",
+                "Men seni sevaman",
+                "ndza ku rhandza",
+                "dw i'n dy garu di",
+                "dji t'veû vol'tî",
+                "ke a o rata",
+                "waan ku jecelahay",
+                "Ou te alofa ia te oe",
+                "Ég elska þig",
+                "ta graih aym ort",
+                "Ah loove ye",
+                "ngiyakuthanda",
+                "Mi amas vin",
+                "rwyndy garu di",
+                "na gligivaget",
+                "ahs te obicham",
+                "🌕🐇中秋快乐不止中秋ღ"
+            ];
+            const copyLines = [
+                "🌑🌘🌗🌖🌕",
+                "🌙Happy Mid-Autumn Festival🥮",
+                "月圆人圆事事团圆 人顺心顺事事都顺",
+                "月光所至 萬事勝意 祝你 祝我 祝我们"
+            ];
+            let typed = 0;
+            let typeTimer = 0;
+
+            function buildHeart() {
+                const fragment = document.createDocumentFragment();
+                for (let index = 0; index < 100; index += 1) {
+                    const love = document.createElement("span");
+                    const horizontal = document.createElement("span");
+                    const vertical = document.createElement("span");
+                    const word = document.createElement("span");
+                    const delay = `${(index + 1) * -0.3}s`;
+
+                    love.className = "love";
+                    horizontal.className = "love-horizontal";
+                    vertical.className = "love-vertical";
+                    word.className = "love-word";
+                    word.textContent = text[index % text.length];
+                    word.style.setProperty("--z", `${-190 + ((index * 47) % 380)}px`);
+                    word.style.setProperty("--pop", `${62 + (index % 6) * 22}px`);
+                    word.style.setProperty("--word-size", `${24 + (index % 4) * 2}px`);
+                    word.style.animationDelay = `${(index % 11) * -0.47}s`;
+                    horizontal.style.animationDelay = delay;
+                    vertical.style.animationDelay = delay;
+                    vertical.appendChild(word);
+                    horizontal.appendChild(vertical);
+                    love.appendChild(horizontal);
+                    fragment.appendChild(love);
+                }
+                heartShell.replaceChildren(fragment);
+            }
+
+            function fitHeart() {
+                const safeWidth = Math.max(280, window.innerWidth - 18);
+                const safeHeight = Math.max(420, window.innerHeight - 18);
+                const scale = Math.max(0.44, Math.min(1, safeWidth / 700, safeHeight / 700));
+                document.documentElement.style.setProperty("--heart-scale", scale.toFixed(3));
+                document.documentElement.style.setProperty("--heart-scale-small", (scale * 0.42).toFixed(3));
+                document.documentElement.style.setProperty("--heart-scale-mid", (scale * 1.08).toFixed(3));
+            }
+
+            function typeCopy() {
+                window.clearInterval(typeTimer);
+                const fullText = copyLines.join("\n");
+                typed = 0;
+                printNode.textContent = "";
+                typeTimer = window.setInterval(() => {
+                    typed += 1;
+                    printNode.textContent = fullText.slice(0, typed);
+                    if (typed >= fullText.length) {
+                        window.clearInterval(typeTimer);
+                    }
+                }, reduceMotion ? 1 : 72);
+            }
+
+            function playMusic() {
+                const promise = bgm.play();
+                if (promise && typeof promise.catch === "function") {
+                    promise.catch(() => {});
+                }
+            }
+
+            function open() {
+                if (body.classList.contains("opened")) {
+                    playMusic();
+                    return;
+                }
+                body.classList.add("opened");
+                playMusic();
+                window.setTimeout(typeCopy, 180);
+            }
+
+            entryButton.addEventListener("click", open);
+            window.addEventListener("resize", fitHeart, { passive: true });
+            window.addEventListener("orientationchange", () => window.setTimeout(fitHeart, 80));
+            document.addEventListener("click", () => {
+                if (body.classList.contains("opened") && bgm.paused) {
+                    playMusic();
+                }
+            });
+
+            buildHeart();
+            fitHeart();
+        })();
+    </script>
+</body>
+</html>
