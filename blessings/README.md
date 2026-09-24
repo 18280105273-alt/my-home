@@ -21,7 +21,7 @@
 
 - 独立的开屏动画、粒子效果、主题配色和排版
 - 点击开屏按钮后播放动态祝福
-- 浏览器自动生成轻柔背景音乐，无外部音频文件
+- 点击开屏后立即播放完整流行风 BGM，并叠加冲击音和按钮音效
 - 支持复制祝福语、系统分享和重新播放
 - 支持手机与桌面浏览器的响应式布局
 - 支持减少动态效果的系统偏好设置
@@ -65,5 +65,12 @@ blessings/
     ├── blessing.js
     ├── favicon.svg
     ├── gallery.css
-    └── gallery.js
+    ├── gallery.js
+    └── audio/
+        ├── README.md
+        └── pop-bgm.mp3
 ```
+
+## 音乐版权
+
+正式 BGM 为 `Mesostic - Synth pop with 4 on the floor`，采用 CC0 1.0 公共领域贡献协议，可公开播放和分发。来源记录见 `assets/audio/README.md`。

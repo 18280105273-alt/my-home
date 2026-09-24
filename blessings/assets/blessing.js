@@ -22,16 +22,16 @@
     };
 
     const themeSettings = {
-        "mid-autumn": { count: 0.000072, kinds: ["firefly", "star", "lantern"] },
-        "new-year": { count: 0.00006, kinds: ["ember", "lantern", "star"] },
-        birthday: { count: 0.000064, kinds: ["confetti", "bubble", "star"] },
-        valentine: { count: 0.000058, kinds: ["heart", "spark", "star"] },
-        "mothers-day": { count: 0.000062, kinds: ["petal", "butterfly", "spark"] },
-        "fathers-day": { count: 0.000052, kinds: ["star", "comet", "spark"] },
-        graduation: { count: 0.000066, kinds: ["confetti", "plane", "star"] },
-        thanksgiving: { count: 0.000064, kinds: ["leaf", "spark", "star"] },
-        anniversary: { count: 0.000058, kinds: ["rose", "spark", "star"] },
-        peace: { count: 0.000058, kinds: ["bubble", "petal", "star"] },
+        "mid-autumn": { count: 0.000078, kinds: ["firefly", "star", "lantern", "spark"] },
+        "new-year": { count: 0.000076, kinds: ["ember", "lantern", "star", "spark"] },
+        birthday: { count: 0.000082, kinds: ["confetti", "bubble", "star", "spark"] },
+        valentine: { count: 0.000076, kinds: ["heart", "spark", "star", "petal"] },
+        "mothers-day": { count: 0.000078, kinds: ["petal", "butterfly", "spark", "bubble"] },
+        "fathers-day": { count: 0.000072, kinds: ["star", "comet", "spark", "ember"] },
+        graduation: { count: 0.000084, kinds: ["confetti", "plane", "star", "spark"] },
+        thanksgiving: { count: 0.00008, kinds: ["leaf", "spark", "star", "bubble"] },
+        anniversary: { count: 0.000074, kinds: ["rose", "spark", "star", "petal"] },
+        peace: { count: 0.000078, kinds: ["bubble", "petal", "star", "spark"] },
     };
 
     const palette = palettes[theme] || palettes["mid-autumn"];
@@ -47,6 +47,11 @@
     let pointer = { x: 0, y: 0, active: false };
     let animationFrame = 0;
     let lastPointerSpark = 0;
+    let beatPulse = 0;
+    let impactPulse = 0;
+    let wordField = null;
+    let wordNodes = [];
+    let shockwaves = [];
 
     const random = (min, max) => Math.random() * (max - min) + min;
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -63,7 +68,7 @@
     }
 
     function seedScene() {
-        const target = clamp(Math.round(width * height * settings.count), 42, reduceMotion ? 70 : 180);
+        const target = clamp(Math.round(width * height * settings.count), 54, reduceMotion ? 72 : 220);
         particles = Array.from({ length: target }, (_, index) => makeParticle(settings.kinds[index % settings.kinds.length], true));
         buildStars();
     }
@@ -194,20 +199,21 @@
     }
 
     function drawFirefly(particle) {
-        const glow = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size * 5.5);
+        const radius = particle.size * 2.6;
+        const glow = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, radius);
         glow.addColorStop(0, particle.color);
-        glow.addColorStop(0.18, particle.color);
+        glow.addColorStop(0.12, particle.color);
         glow.addColorStop(1, "rgba(255,255,255,0)");
-        ctx.globalAlpha = particle.alpha;
+        ctx.globalAlpha = particle.alpha * 0.72;
         ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size * 5.5, 0, Math.PI * 2);
+        ctx.arc(particle.x, particle.y, radius, 0, Math.PI * 2);
         ctx.fill();
     }
 
     function drawLantern(particle) {
-        const w = particle.size * 2.9;
-        const h = particle.size * 3.7;
+        const w = particle.size * 2.25;
+        const h = particle.size * 2.95;
         ctx.save();
         ctx.translate(particle.x, particle.y);
         ctx.rotate(Math.sin(particle.phase) * 0.06);
@@ -465,6 +471,191 @@
         (painters[particle.kind] || drawStar)(particle);
     }
 
+    function createWordHeart() {
+        const sourceWords = [
+            "平安",
+            "喜乐",
+            "团圆",
+            "顺遂",
+            "好运",
+            "如愿",
+            "温暖",
+            "常安",
+            "欢喜",
+            "幸福",
+            "闪光",
+            "美好",
+        ];
+        const count = reduceMotion ? 28 : clamp(Math.round(Math.min(width, height) / 13), 38, 56);
+
+        wordField = document.createElement("div");
+        wordField.className = "word-field";
+        wordField.setAttribute("aria-hidden", "true");
+
+        wordNodes = Array.from({ length: count }, (_, index) => {
+            const node = document.createElement("span");
+            const word = sourceWords[index % sourceWords.length];
+            node.className = "word-chip";
+            node.textContent = word;
+            node.style.setProperty("--word-color", palette[index % palette.length]);
+            node.style.setProperty("--word-delay", `${(index % 12) * -0.19}s`);
+            wordField.appendChild(node);
+            return {
+                node,
+                angle: (index / count) * Math.PI * 2,
+                phase: random(0, Math.PI * 2),
+                twist: random(0.72, 1.28),
+            };
+        });
+
+        document.querySelector(".blessing").prepend(wordField);
+    }
+
+    function splitBlessingTitle() {
+        const title = document.querySelector(".blessing-title");
+        if (!title || title.dataset.split === "true") {
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        let charIndex = 0;
+
+        Array.from(title.childNodes).forEach((node) => {
+            const isAccent = node.nodeType === Node.ELEMENT_NODE && node.classList.contains("accent");
+            const characters = Array.from(node.textContent || "");
+
+            characters.forEach((character) => {
+                const span = document.createElement("span");
+                span.className = isAccent ? "char accent" : "char";
+                span.style.setProperty("--char-index", charIndex);
+                span.textContent = character;
+                fragment.appendChild(span);
+                charIndex += 1;
+            });
+        });
+
+        title.replaceChildren(fragment);
+        title.dataset.split = "true";
+    }
+
+    function updateWordHeart(time) {
+        if (!wordField || !wordNodes.length) {
+            return;
+        }
+
+        const size = Math.min(width * 0.92, height * 0.82, 760);
+        const radius = size * 0.37;
+        const travel = time * 0.000075;
+        const yaw = Math.sin(time * 0.00016) * 0.72;
+        const energy = 1 + beatPulse * 0.07 + impactPulse * 0.11;
+
+        wordNodes.forEach((item) => {
+            const angle = item.angle + travel * item.twist;
+            const heartX = 16 * Math.pow(Math.sin(angle), 3);
+            const heartY = -(13 * Math.cos(angle) - 5 * Math.cos(2 * angle) - 2 * Math.cos(3 * angle) - Math.cos(4 * angle));
+            const x = (heartX * radius) / 17;
+            const baseY = (heartY * radius) / 17;
+            const z = Math.sin(angle * 2 + item.phase) * radius * 0.16;
+            const rotatedX = x * Math.cos(yaw) - z * Math.sin(yaw);
+            const depth = (z * Math.cos(yaw) + x * Math.sin(yaw)) / (radius || 1);
+            const scale = (0.72 + (depth + 0.3) * 0.42) * energy;
+            const opacity = clamp(0.28 + (depth + 0.38) * 0.62, 0.16, 0.86);
+
+            item.node.style.opacity = String(opacity);
+            item.node.style.transform =
+                `translate(-50%, -50%) translate3d(${rotatedX}px, ${baseY}px, 0) ` +
+                `rotate(${Math.sin(angle * 2) * 12}deg) scale(${clamp(scale, 0.55, 1.35)})`;
+        });
+
+        wordField.style.transform = `translateZ(0) rotate(${Math.sin(time * 0.00018) * 3}deg)`;
+    }
+
+    function drawCinematicCore() {
+        if (!body.classList.contains("opening") && !body.classList.contains("opened")) {
+            return;
+        }
+
+        const centerX = width * 0.5;
+        const centerY = height * 0.5;
+        const pulse = 1 + beatPulse * 0.14 + impactPulse * 0.22;
+        const baseRadius = Math.min(width, height) * 0.19;
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(elapsed * 0.00008);
+
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, baseRadius * 2.4 * pulse);
+        glow.addColorStop(0, `${palette[0]}00`);
+        glow.addColorStop(0.32, `${palette[0]}1f`);
+        glow.addColorStop(0.62, `${palette[1]}0d`);
+        glow.addColorStop(1, `${palette[0]}00`);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, baseRadius * 2.4 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let ray = 0; ray < 22; ray += 1) {
+            const angle = (ray / 22) * Math.PI * 2;
+            const inner = baseRadius * (0.48 + Math.sin(elapsed * 0.001 + ray) * 0.04);
+            const outer = baseRadius * (1.5 + (ray % 3) * 0.13) * pulse;
+            ctx.globalAlpha = 0.024 + (ray % 4) * 0.009;
+            ctx.strokeStyle = palette[ray % palette.length];
+            ctx.lineWidth = ray % 3 === 0 ? 1.1 : 0.55;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+            ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+            ctx.stroke();
+        }
+
+        for (let ring = 0; ring < 3; ring += 1) {
+            ctx.globalAlpha = 0.06 - ring * 0.013 + beatPulse * 0.03;
+            ctx.strokeStyle = palette[(ring + 1) % palette.length];
+            ctx.lineWidth = 1;
+            ctx.setLineDash(ring === 1 ? [3, 15] : []);
+            ctx.beginPath();
+            ctx.arc(0, 0, baseRadius * (1.25 + ring * 0.34) * pulse, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    function spawnShockwave(x, y) {
+        shockwaves.push({
+            x,
+            y,
+            radius: 12,
+            alpha: 0.9,
+            speed: 7.5,
+            color: palette[0],
+        });
+    }
+
+    function updateShockwaves(dt) {
+        const frameScale = dt / 16.67;
+        shockwaves.forEach((wave) => {
+            wave.radius += wave.speed * frameScale;
+            wave.speed *= 0.975;
+            wave.alpha *= 0.965;
+        });
+        shockwaves = shockwaves.filter((wave) => wave.alpha > 0.025);
+    }
+
+    function drawShockwaves() {
+        shockwaves.forEach((wave) => {
+            ctx.save();
+            ctx.globalAlpha = wave.alpha;
+            ctx.strokeStyle = wave.color;
+            ctx.lineWidth = 1.2;
+            ctx.shadowColor = wave.color;
+            ctx.shadowBlur = 24;
+            ctx.beginPath();
+            ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        });
+    }
+
     function drawBackdrop() {
         if (theme === "valentine") {
             ctx.save();
@@ -540,21 +731,37 @@
     }
 
     function update(dt) {
+        const frameScale = dt / 16.67;
         particles.forEach((particle) => updateParticle(particle, dt));
         particles = particles.filter((particle) => !particle.dead);
+        beatPulse *= Math.pow(0.91, frameScale);
+        impactPulse *= Math.pow(0.9, frameScale);
+        audio.updateVisualizer();
+        updateWordHeart(elapsed);
+        updateShockwaves(dt);
 
         if (!reduceMotion && elapsed > nextBurst) {
             if (theme === "new-year") {
-                burst(random(width * 0.15, width * 0.85), random(height * 0.12, height * 0.48), 28, "spark");
-                nextBurst = elapsed + random(1500, 2600);
+                burst(random(width * 0.15, width * 0.85), random(height * 0.12, height * 0.48), 44, "spark");
+                nextBurst = elapsed + random(1100, 2100);
             } else if (theme === "birthday" || theme === "graduation") {
-                burst(random(width * 0.12, width * 0.88), random(height * 0.08, height * 0.3), 18, "confetti");
-                nextBurst = elapsed + random(2700, 4300);
+                burst(random(width * 0.12, width * 0.88), random(height * 0.08, height * 0.3), 30, "confetti");
+                nextBurst = elapsed + random(2100, 3500);
             } else if (theme === "valentine") {
-                burst(random(width * 0.12, width * 0.88), random(height * 0.24, height * 0.76), 10, "heart");
-                nextBurst = elapsed + random(1900, 3100);
+                burst(random(width * 0.12, width * 0.88), random(height * 0.24, height * 0.76), 18, "heart");
+                nextBurst = elapsed + random(1500, 2500);
+            } else if (theme === "mid-autumn") {
+                burst(random(width * 0.12, width * 0.88), random(height * 0.18, height * 0.65), 15, "firefly");
+                nextBurst = elapsed + random(1400, 2400);
+            } else if (theme === "mothers-day" || theme === "thanksgiving") {
+                burst(random(width * 0.08, width * 0.92), random(height * 0.08, height * 0.4), 20, theme === "mothers-day" ? "petal" : "leaf");
+                nextBurst = elapsed + random(1800, 2900);
+            } else if (theme === "anniversary" || theme === "peace") {
+                burst(random(width * 0.12, width * 0.88), random(height * 0.18, height * 0.72), 18, theme === "anniversary" ? "rose" : "bubble");
+                nextBurst = elapsed + random(1700, 2800);
             } else {
-                nextBurst = elapsed + 10000;
+                burst(random(width * 0.1, width * 0.9), random(height * 0.12, height * 0.7), 20, "spark");
+                nextBurst = elapsed + random(1800, 3000);
             }
         }
     }
@@ -562,7 +769,9 @@
     function render() {
         ctx.clearRect(0, 0, width, height);
         drawBackdrop();
+        drawCinematicCore();
         particles.forEach(drawParticle);
+        drawShockwaves();
         ctx.globalAlpha = 1;
     }
 
@@ -582,17 +791,17 @@
 
         const additions = Array.from({ length: amount }, () => {
             const angle = random(0, Math.PI * 2);
-            const speed = random(1.2, 6.8);
+            const speed = random(1.7, 8.1);
             return {
                 kind,
                 x,
                 y,
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed,
-                size: random(1.5, 4.2),
-                length: random(8, 25),
+                size: random(1.5, 4.1),
+                length: random(10, 32),
                 rotation: random(0, Math.PI * 2),
-                spin: random(-0.22, 0.22),
+                spin: random(-0.3, 0.3),
                 alpha: random(0.45, 1),
                 phase: random(0, Math.PI * 2),
                 wave: 0,
@@ -602,7 +811,37 @@
             };
         });
 
-        particles.push(...additions.slice(0, Math.max(0, 520 - particles.length)));
+        particles.push(...additions.slice(0, Math.max(0, 920 - particles.length)));
+    }
+
+    function spiralBurst(x, y, amount = 150, kind = "spark") {
+        if (reduceMotion) {
+            return;
+        }
+
+        const additions = Array.from({ length: amount }, (_, index) => {
+            const angle = (index / amount) * Math.PI * 6 + random(-0.18, 0.18);
+            const speed = random(1.4, 7.8);
+            return {
+                kind: index % 7 === 0 ? "star" : kind,
+                x,
+                y,
+                vx: Math.cos(angle) * speed + random(-0.8, 0.8),
+                vy: Math.sin(angle) * speed + random(-0.8, 0.8),
+                size: random(1.3, 3.9),
+                length: random(12, 38),
+                rotation: angle,
+                spin: random(-0.34, 0.34),
+                alpha: random(0.55, 1),
+                phase: random(0, Math.PI * 2),
+                wave: 0,
+                color: color(),
+                life: random(0.6, 1),
+                decay: random(0.0035, 0.009),
+            };
+        });
+
+        particles.push(...additions.slice(0, Math.max(0, 980 - particles.length)));
     }
 
     function handlePointer(event) {
@@ -615,8 +854,8 @@
         }
 
         const now = performance.now();
-        if (now - lastPointerSpark > 70) {
-            burst(pointer.x, pointer.y, theme === "peace" ? 4 : 6, theme === "new-year" ? "spark" : theme === "peace" ? "bubble" : "spark");
+        if (now - lastPointerSpark > 55) {
+            burst(pointer.x, pointer.y, theme === "peace" ? 8 : 11, theme === "peace" ? "bubble" : "spark");
             lastPointerSpark = now;
         }
     }
@@ -625,22 +864,116 @@
         constructor() {
             this.context = null;
             this.master = null;
+            this.compressor = null;
+            this.reverb = null;
+            this.reverbGain = null;
+            this.noiseBuffer = null;
             this.timer = 0;
             this.step = 0;
+            this.nextStepTime = 0;
             this.enabled = false;
-            this.notesByTheme = {
-                "mid-autumn": [261.63, 293.66, 349.23, 392, 523.25, 587.33],
-                "new-year": [261.63, 329.63, 392, 523.25, 659.25, 783.99],
-                birthday: [261.63, 329.63, 392, 523.25, 659.25, 783.99],
-                valentine: [220, 261.63, 329.63, 392, 440, 523.25],
-                "mothers-day": [293.66, 349.23, 440, 523.25, 587.33, 698.46],
-                "fathers-day": [130.81, 164.81, 196, 261.63, 329.63, 392],
-                graduation: [261.63, 293.66, 329.63, 392, 440, 523.25],
-                thanksgiving: [196, 246.94, 293.66, 369.99, 440, 493.88],
-                anniversary: [174.61, 220, 261.63, 329.63, 349.23, 440],
-                peace: [261.63, 329.63, 392, 523.25, 587.33, 783.99],
+            this.bgm = null;
+            this.bgmSource = null;
+            this.analyser = null;
+            this.analyserData = null;
+            this.bgmFadeTimer = 0;
+            this.hasStarted = false;
+            this.pendingPlay = false;
+            this.offsets = {
+                "mid-autumn": 0,
+                "new-year": 15,
+                birthday: 32,
+                valentine: 48,
+                "mothers-day": 65,
+                "fathers-day": 82,
+                graduation: 98,
+                thanksgiving: 115,
+                anniversary: 132,
+                peace: 150,
             };
-            this.notes = this.notesByTheme[theme] || this.notesByTheme["mid-autumn"];
+            this.configs = {
+                "mid-autumn": {
+                    tempo: 126,
+                    root: 62,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 5, 3, 4],
+                    melody: [0, 4, 7, 4, 5, 4, 2, 0, 7, 9, 7, 5, 4, 2, 1, 0],
+                    pad: ["sine", "triangle"],
+                },
+                "new-year": {
+                    tempo: 136,
+                    root: 60,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 4, 5, 3],
+                    melody: [0, 4, 7, 9, 7, 4, 2, 4, 0, 7, 9, 12, 9, 7, 4, 2],
+                    pad: ["triangle", "sine"],
+                },
+                birthday: {
+                    tempo: 132,
+                    root: 64,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 5, 3, 4],
+                    melody: [0, 2, 4, 7, 9, 7, 4, 2, 4, 7, 9, 12, 9, 7, 5, 4],
+                    pad: ["triangle", "sine"],
+                },
+                valentine: {
+                    tempo: 118,
+                    root: 57,
+                    scale: [0, 2, 3, 7, 9, 12, 14, 15],
+                    progression: [0, 5, 3, 4],
+                    melody: [0, 3, 7, 9, 7, 3, 2, 0, 4, 7, 9, 12, 9, 7, 3, 2],
+                    pad: ["sine", "triangle"],
+                },
+                "mothers-day": {
+                    tempo: 120,
+                    root: 60,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 3, 5, 4],
+                    melody: [0, 4, 5, 7, 9, 7, 5, 4, 2, 4, 7, 9, 7, 5, 4, 2],
+                    pad: ["sine", "sine"],
+                },
+                "fathers-day": {
+                    tempo: 108,
+                    root: 45,
+                    scale: [0, 3, 5, 7, 10, 12, 15, 17],
+                    progression: [0, 5, 3, 4],
+                    melody: [0, 3, 5, 7, 5, 3, 2, 0, 7, 10, 7, 5, 3, 2, 0, -2],
+                    pad: ["sine", "triangle"],
+                },
+                graduation: {
+                    tempo: 128,
+                    root: 62,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 4, 5, 3],
+                    melody: [0, 4, 7, 9, 12, 9, 7, 4, 2, 4, 7, 9, 7, 5, 4, 2],
+                    pad: ["triangle", "sine"],
+                },
+                thanksgiving: {
+                    tempo: 116,
+                    root: 55,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 3, 5, 4],
+                    melody: [0, 4, 7, 4, 2, 4, 5, 7, 9, 7, 5, 4, 2, 0, 2, 4],
+                    pad: ["sine", "triangle"],
+                },
+                anniversary: {
+                    tempo: 122,
+                    root: 57,
+                    scale: [0, 2, 3, 7, 9, 12, 14, 15],
+                    progression: [0, 5, 3, 4],
+                    melody: [0, 3, 7, 9, 12, 9, 7, 3, 2, 3, 7, 9, 7, 5, 3, 2],
+                    pad: ["sine", "triangle"],
+                },
+                peace: {
+                    tempo: 112,
+                    root: 65,
+                    scale: [0, 2, 4, 7, 9, 12, 14, 16],
+                    progression: [0, 3, 5, 4],
+                    melody: [0, 4, 7, 9, 7, 4, 2, 0, 4, 5, 7, 9, 7, 5, 4, 2],
+                    pad: ["sine", "sine"],
+                },
+            };
+            this.config = this.configs[theme] || this.configs["mid-autumn"];
         }
 
         ensureContext() {
@@ -650,47 +983,192 @@
 
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             if (!AudioContext) {
-                showToast("当前浏览器不支持合成音乐");
+                showToast("当前浏览器不支持动态音乐");
                 return false;
             }
 
-            this.context = new AudioContext();
+            this.context = new AudioContext({ latencyHint: "interactive" });
             this.master = this.context.createGain();
             this.master.gain.value = 0.0001;
+            this.compressor = this.context.createDynamicsCompressor();
+            this.compressor.threshold.value = -18;
+            this.compressor.knee.value = 16;
+            this.compressor.ratio.value = 5;
+            this.compressor.attack.value = 0.005;
+            this.compressor.release.value = 0.22;
+            this.compressor.connect(this.master);
             this.master.connect(this.context.destination);
+
+            const impulseLength = Math.floor(this.context.sampleRate * 1.65);
+            const impulse = this.context.createBuffer(2, impulseLength, this.context.sampleRate);
+            for (let channel = 0; channel < impulse.numberOfChannels; channel += 1) {
+                const samples = impulse.getChannelData(channel);
+                for (let index = 0; index < impulseLength; index += 1) {
+                    samples[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / impulseLength, 2.8);
+                }
+            }
+            this.reverb = this.context.createConvolver();
+            this.reverb.buffer = impulse;
+            this.reverbGain = this.context.createGain();
+            this.reverbGain.gain.value = 0.2;
+            this.reverb.connect(this.reverbGain);
+            this.reverbGain.connect(this.master);
+
+            const noiseLength = Math.floor(this.context.sampleRate * 2);
+            this.noiseBuffer = this.context.createBuffer(1, noiseLength, this.context.sampleRate);
+            const noise = this.noiseBuffer.getChannelData(0);
+            for (let index = 0; index < noiseLength; index += 1) {
+                noise[index] = Math.random() * 2 - 1;
+            }
             return true;
         }
 
-        async start() {
-            if (this.enabled || !this.ensureContext()) {
+        ensureBackgroundTrack() {
+            if (this.bgm) {
+                return true;
+            }
+
+            const element = document.createElement("audio");
+            element.id = "bgm";
+            element.className = "background-track";
+            element.src = "assets/audio/pop-bgm.mp3";
+            element.loop = true;
+            element.preload = "auto";
+            element.playsInline = true;
+            element.setAttribute("aria-hidden", "true");
+            document.body.appendChild(element);
+            this.bgm = element;
+            this.connectBackgroundTrack();
+            return true;
+        }
+
+        connectBackgroundTrack() {
+            if (!this.context || !this.bgm || this.bgmSource) {
                 return;
             }
 
-            await this.context.resume();
+            try {
+                this.bgmSource = this.context.createMediaElementSource(this.bgm);
+                this.analyser = this.context.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.analyser.smoothingTimeConstant = 0.82;
+                this.analyserData = new Uint8Array(this.analyser.frequencyBinCount);
+                this.bgmSource.connect(this.analyser);
+                this.analyser.connect(this.compressor);
+            } catch (error) {
+                this.bgmSource = null;
+                this.analyser = null;
+                this.analyserData = null;
+                this.bgm.volume = 0.86;
+            }
+        }
+
+        prepare() {
+            this.ensureBackgroundTrack();
+            this.bgm.load();
+        }
+
+        fadeBackgroundTrack(target, duration = 700) {
+            if (!this.bgm) {
+                return;
+            }
+
+            window.clearInterval(this.bgmFadeTimer);
+            const startVolume = this.bgm.volume;
+            const startedAt = performance.now();
+            this.bgmFadeTimer = window.setInterval(() => {
+                const progress = clamp((performance.now() - startedAt) / duration, 0, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                this.bgm.volume = startVolume + (target - startVolume) * eased;
+                if (progress >= 1) {
+                    window.clearInterval(this.bgmFadeTimer);
+                    this.bgmFadeTimer = 0;
+                }
+            }, 25);
+        }
+
+        playBackgroundTrack(restart = false) {
+            if (!this.ensureBackgroundTrack()) {
+                return false;
+            }
+
+            if (restart || !this.hasStarted) {
+                const offset = this.offsets[theme] || 0;
+                if (Number.isFinite(this.bgm.duration) && this.bgm.duration > offset + 1) {
+                    this.bgm.currentTime = offset;
+                } else {
+                    this.bgm.addEventListener(
+                        "loadedmetadata",
+                        () => {
+                            if (this.bgm.duration > offset + 1) {
+                                this.bgm.currentTime = offset;
+                            }
+                        },
+                        { once: true }
+                    );
+                }
+                this.hasStarted = true;
+            }
+
+            this.bgm.volume = restart ? 0.0001 : Math.max(0.15, this.bgm.volume);
+            const playPromise = this.bgm.play();
+            if (playPromise && typeof playPromise.catch === "function") {
+                playPromise
+                    .then(() => {
+                        this.pendingPlay = false;
+                        this.fadeBackgroundTrack(0.86, restart ? 1350 : 650);
+                    })
+                    .catch(() => {
+                        this.pendingPlay = true;
+                        showToast("再次轻触页面即可继续播放音乐");
+                    });
+            }
+            return true;
+        }
+
+        start(options = {}) {
+            const restart = Boolean(options.restart);
+            if (this.enabled && !restart) {
+                return true;
+            }
+
+            this.ensureContext();
+            this.ensureBackgroundTrack();
+            this.connectBackgroundTrack();
             this.enabled = true;
-            const now = this.context.currentTime;
-            this.master.gain.cancelScheduledValues(now);
-            this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), now);
-            this.master.gain.exponentialRampToValueAtTime(0.052, now + 1.4);
-            this.playStep();
-            this.timer = window.setInterval(
-                () => this.playStep(),
-                theme === "new-year" ? 1280 : theme === "fathers-day" ? 2050 : 1740
-            );
+            if (this.context) {
+                const now = this.context.currentTime + 0.018;
+                this.context.resume().catch(() => {});
+                this.master.gain.cancelScheduledValues(now);
+                this.master.gain.setValueAtTime(0.0001, now);
+                this.master.gain.exponentialRampToValueAtTime(0.68, now + 0.08);
+                this.playWhoosh(now);
+                this.playImpact(now + 0.04);
+                this.playChime(this.degreeToFrequency(12, 1), now + 0.16, 0.2);
+                this.playChime(this.degreeToFrequency(7, 1), now + 0.31, 0.14);
+            }
+            this.playBackgroundTrack(restart);
+            return true;
         }
 
         stop() {
-            if (!this.enabled || !this.context) {
-                return;
-            }
-
-            const now = this.context.currentTime;
-            this.master.gain.cancelScheduledValues(now);
-            this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), now);
-            this.master.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
             this.enabled = false;
             window.clearInterval(this.timer);
             this.timer = 0;
+            if (this.bgm) {
+                this.fadeBackgroundTrack(0.0001, 340);
+                window.setTimeout(() => {
+                    if (!this.enabled && this.bgm) {
+                        this.bgm.pause();
+                    }
+                }, 360);
+            }
+            if (this.context) {
+                const now = this.context.currentTime;
+                this.master.gain.cancelScheduledValues(now);
+                this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), now);
+                this.master.gain.exponentialRampToValueAtTime(0.0001, now + 0.34);
+            }
         }
 
         toggle() {
@@ -702,55 +1180,290 @@
             return this.enabled;
         }
 
-        playStep() {
-            if (!this.enabled || !this.context || this.context.state !== "running") {
+        updateVisualizer() {
+            if (!this.enabled || !this.analyser || !this.analyserData) {
                 return;
             }
 
-            const now = this.context.currentTime;
-            const offset = this.step % this.notes.length;
-            const note = this.notes[offset];
-            const companion = this.notes[(offset + 2) % this.notes.length];
-            const duration = theme === "new-year" ? 1.15 : 1.9;
-            this.playTone(note, now, duration, theme === "new-year" ? 0.026 : 0.022);
-            this.playTone(companion, now + 0.18, duration * 0.82, 0.012, "triangle");
-
-            if (offset === 0 || offset === 3) {
-                this.playTone(note / 2, now, duration * 1.25, 0.008, "sine");
+            this.analyser.getByteFrequencyData(this.analyserData);
+            let bass = 0;
+            let total = 0;
+            for (let index = 0; index < this.analyserData.length; index += 1) {
+                total += this.analyserData[index];
+                if (index < 12) {
+                    bass += this.analyserData[index];
+                }
             }
-
-            this.step += 1;
+            const bassLevel = bass / (12 * 255);
+            const overall = total / (this.analyserData.length * 255);
+            if (bassLevel > 0.34) {
+                beatPulse = Math.max(beatPulse, (bassLevel - 0.28) * 1.8);
+            }
+            document.documentElement.style.setProperty("--music-level", overall.toFixed(3));
         }
 
-        playTone(frequency, startTime, duration, level, type = "sine") {
-            const oscillator = this.context.createOscillator();
-            const filter = this.context.createBiquadFilter();
-            const gain = this.context.createGain();
-            const panner = typeof this.context.createStereoPanner === "function" ? this.context.createStereoPanner() : null;
-
-            oscillator.type = type;
-            oscillator.frequency.value = frequency;
-            oscillator.detune.value = random(-4, 4);
-            filter.type = "lowpass";
-            filter.frequency.value = theme === "fathers-day" ? 900 : 1650;
-            filter.Q.value = 0.55;
-            gain.gain.setValueAtTime(0.0001, startTime);
-            gain.gain.exponentialRampToValueAtTime(level, startTime + 0.08);
-            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-            oscillator.connect(filter);
-            filter.connect(gain);
-
-            if (panner) {
-                panner.pan.value = random(-0.32, 0.32);
-                gain.connect(panner);
-                panner.connect(this.master);
-            } else {
-                gain.connect(this.master);
+        scheduler() {
+            if (!this.enabled || !this.context || this.context.state === "closed") {
+                return;
             }
 
+            const lookAhead = 0.12;
+            const stepDuration = 60 / this.config.tempo / 2;
+            while (this.nextStepTime < this.context.currentTime + lookAhead) {
+                this.scheduleStep(this.step, this.nextStepTime);
+                this.step += 1;
+                this.nextStepTime += stepDuration;
+            }
+        }
+
+        scheduleStep(step, time) {
+            const localStep = step % 16;
+            const bar = Math.floor(step / 16) % this.config.progression.length;
+            const chord = this.config.progression[bar];
+            const melodyDegree = this.config.melody[localStep] + chord;
+
+            if (localStep % 2 === 0) {
+                this.playPluck(this.degreeToFrequency(melodyDegree, 1), time, localStep % 4 === 0 ? 0.105 : 0.075);
+            }
+
+            if (localStep === 2 || localStep === 10) {
+                this.playChime(this.degreeToFrequency(melodyDegree + 5, 1), time + 0.03, 0.09);
+            }
+
+            if (localStep === 0 || localStep === 8) {
+                [0, 2, 4].forEach((offset, index) => {
+                    this.playPad(this.degreeToFrequency(chord + offset, 0), time + index * 0.028, 2.25, 0.032);
+                });
+            }
+
+            if (localStep % 4 === 0) {
+                this.playBass(this.degreeToFrequency(chord - 12, 0), time, 0.42);
+            }
+
+            if (localStep === 0 || localStep === 4 || localStep === 8 || localStep === 12) {
+                this.playKick(time);
+                beatPulse = 1;
+            }
+
+            if (localStep === 4 || localStep === 12) {
+                this.playClap(time + 0.012);
+            }
+
+            if (localStep % 2 === 1) {
+                this.playHat(time, localStep % 4 === 3 ? 0.037 : 0.022);
+            }
+        }
+
+        degreeToFrequency(degree, octave = 0) {
+            const scale = this.config.scale;
+            const length = scale.length;
+            const normalized = ((degree % length) + length) % length;
+            const octaveOffset = Math.floor(degree / length) * 12;
+            const midi = this.config.root + scale[normalized] + octaveOffset + octave * 12;
+            return 440 * Math.pow(2, (midi - 69) / 12);
+        }
+
+        connectVoice(node, reverbAmount = 0.2) {
+            const panner = typeof this.context.createStereoPanner === "function"
+                ? this.context.createStereoPanner()
+                : null;
+            if (panner) {
+                panner.pan.value = random(-0.38, 0.38);
+                node.connect(panner);
+                panner.connect(this.compressor);
+                if (this.reverb && reverbAmount > 0) {
+                    const send = this.context.createGain();
+                    send.gain.value = reverbAmount;
+                    panner.connect(send);
+                    send.connect(this.reverb);
+                }
+                return;
+            }
+            node.connect(this.compressor);
+            if (this.reverb && reverbAmount > 0) {
+                const send = this.context.createGain();
+                send.gain.value = reverbAmount;
+                node.connect(send);
+                send.connect(this.reverb);
+            }
+        }
+
+        playPluck(frequency, startTime, level) {
+            const oscillator = this.context.createOscillator();
+            const harmonic = this.context.createOscillator();
+            const filter = this.context.createBiquadFilter();
+            const gain = this.context.createGain();
+            oscillator.type = "triangle";
+            harmonic.type = "sine";
+            oscillator.frequency.value = frequency;
+            harmonic.frequency.value = frequency * 2.01;
+            harmonic.detune.value = random(-8, 8);
+            filter.type = "lowpass";
+            filter.frequency.setValueAtTime(3600, startTime);
+            filter.frequency.exponentialRampToValueAtTime(880, startTime + 0.72);
+            filter.Q.value = 0.75;
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(level, startTime + 0.012);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.78);
+            oscillator.connect(filter);
+            harmonic.connect(filter);
+            filter.connect(gain);
+            this.connectVoice(gain, 0.25);
             oscillator.start(startTime);
-            oscillator.stop(startTime + duration + 0.08);
+            harmonic.start(startTime);
+            oscillator.stop(startTime + 0.82);
+            harmonic.stop(startTime + 0.82);
+        }
+
+        playPad(frequency, startTime, duration, level) {
+            [0, 1].forEach((index) => {
+                const oscillator = this.context.createOscillator();
+                const filter = this.context.createBiquadFilter();
+                const gain = this.context.createGain();
+                oscillator.type = this.config.pad[index];
+                oscillator.frequency.value = frequency * (index === 1 ? 1.006 : 1);
+                oscillator.detune.value = index === 1 ? 7 : -5;
+                filter.type = "lowpass";
+                filter.frequency.value = 1350;
+                gain.gain.setValueAtTime(0.0001, startTime);
+                gain.gain.exponentialRampToValueAtTime(level, startTime + 0.38);
+                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+                oscillator.connect(filter);
+                filter.connect(gain);
+                this.connectVoice(gain, 0.5);
+                oscillator.start(startTime);
+                oscillator.stop(startTime + duration + 0.08);
+            });
+        }
+
+        playBass(frequency, startTime, duration) {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
+            oscillator.type = "sine";
+            oscillator.frequency.setValueAtTime(frequency * 1.035, startTime);
+            oscillator.frequency.exponentialRampToValueAtTime(frequency, startTime + 0.22);
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.17, startTime + 0.025);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+            oscillator.connect(gain);
+            this.connectVoice(gain, 0.08);
+            oscillator.start(startTime);
+            oscillator.stop(startTime + duration + 0.06);
+        }
+
+        playChime(frequency, startTime, level = 0.12) {
+            [1, 2.01].forEach((ratio, index) => {
+                const oscillator = this.context.createOscillator();
+                const gain = this.context.createGain();
+                oscillator.type = "sine";
+                oscillator.frequency.value = frequency * ratio;
+                gain.gain.setValueAtTime(0.0001, startTime);
+                gain.gain.exponentialRampToValueAtTime(level / (index + 1), startTime + 0.012);
+                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.25 - index * 0.32);
+                oscillator.connect(gain);
+                this.connectVoice(gain, 0.42);
+                oscillator.start(startTime);
+                oscillator.stop(startTime + 1.3);
+            });
+        }
+
+        playKick(startTime) {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
+            oscillator.type = "sine";
+            oscillator.frequency.setValueAtTime(128, startTime);
+            oscillator.frequency.exponentialRampToValueAtTime(43, startTime + 0.16);
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.34, startTime + 0.006);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.28);
+            oscillator.connect(gain);
+            this.connectVoice(gain, 0.08);
+            oscillator.start(startTime);
+            oscillator.stop(startTime + 0.3);
+        }
+
+        playClap(startTime) {
+            const source = this.context.createBufferSource();
+            const filter = this.context.createBiquadFilter();
+            const gain = this.context.createGain();
+            source.buffer = this.noiseBuffer;
+            filter.type = "bandpass";
+            filter.frequency.value = 1550;
+            filter.Q.value = 0.8;
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.12, startTime + 0.005);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.16);
+            source.connect(filter);
+            filter.connect(gain);
+            this.connectVoice(gain, 0.22);
+            source.start(startTime);
+            source.stop(startTime + 0.18);
+        }
+
+        playHat(startTime, level) {
+            const source = this.context.createBufferSource();
+            const filter = this.context.createBiquadFilter();
+            const gain = this.context.createGain();
+            source.buffer = this.noiseBuffer;
+            filter.type = "highpass";
+            filter.frequency.value = 5200;
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(level, startTime + 0.003);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.055);
+            source.connect(filter);
+            filter.connect(gain);
+            this.connectVoice(gain, 0.12);
+            source.start(startTime);
+            source.stop(startTime + 0.07);
+        }
+
+        playWhoosh(startTime) {
+            const source = this.context.createBufferSource();
+            const filter = this.context.createBiquadFilter();
+            const gain = this.context.createGain();
+            source.buffer = this.noiseBuffer;
+            source.loop = true;
+            filter.type = "bandpass";
+            filter.Q.value = 1.4;
+            filter.frequency.setValueAtTime(170, startTime);
+            filter.frequency.exponentialRampToValueAtTime(2450, startTime + 0.34);
+            filter.frequency.exponentialRampToValueAtTime(260, startTime + 0.92);
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.21, startTime + 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.96);
+            source.connect(filter);
+            filter.connect(gain);
+            this.connectVoice(gain, 0.28);
+            source.start(startTime);
+            source.stop(startTime + 1);
+        }
+
+        playImpact(startTime) {
+            const oscillator = this.context.createOscillator();
+            const gain = this.context.createGain();
+            oscillator.type = "sine";
+            oscillator.frequency.setValueAtTime(118, startTime);
+            oscillator.frequency.exponentialRampToValueAtTime(38, startTime + 0.42);
+            gain.gain.setValueAtTime(0.0001, startTime);
+            gain.gain.exponentialRampToValueAtTime(0.42, startTime + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.58);
+            oscillator.connect(gain);
+            this.connectVoice(gain, 0.14);
+            oscillator.start(startTime);
+            oscillator.stop(startTime + 0.62);
+            impactPulse = 1;
+        }
+
+        effect(type = "tap") {
+            if (!this.enabled || !this.context) {
+                return;
+            }
+            const now = this.context.currentTime + 0.006;
+            const frequency = type === "tap"
+                ? this.degreeToFrequency(12 + Math.floor(random(0, 3)), 2)
+                : this.degreeToFrequency(7 + Math.floor(random(0, 5)), 1);
+            this.playChime(frequency, now, type === "tap" ? 0.045 : 0.07);
+            beatPulse = Math.max(beatPulse, 0.45);
         }
     }
 
@@ -823,30 +1536,47 @@
         await copyBlessing();
     }
 
-    async function openBlessing() {
+    function openBlessing() {
         if (body.classList.contains("opened")) {
             return;
         }
 
-        body.classList.add("opened");
-        await audio.start();
+        body.classList.add("opening");
+        audio.start();
         syncSoundControl();
+        const burstKind = ["new-year", "fathers-day"].includes(theme)
+            ? "spark"
+            : theme === "valentine"
+                ? "heart"
+                : theme === "peace"
+                    ? "bubble"
+                    : "confetti";
+        spiralBurst(width * 0.5, height * 0.46, 118, burstKind);
+        spawnShockwave(width * 0.5, height * 0.46);
         window.setTimeout(() => {
-            const burstKind = ["new-year", "fathers-day"].includes(theme) ? "spark" : theme === "valentine" ? "heart" : "confetti";
-            burst(width * 0.5, height * 0.36, 42, burstKind);
-            window.setTimeout(() => burst(width * 0.28, height * 0.42, 24, burstKind), 180);
-            window.setTimeout(() => burst(width * 0.72, height * 0.3, 24, burstKind), 340);
-        }, 180);
+            body.classList.add("opened");
+        }, 45);
+        window.setTimeout(() => {
+            burst(width * 0.5, height * 0.36, 52, burstKind);
+            window.setTimeout(() => burst(width * 0.24, height * 0.42, 32, burstKind), 170);
+            window.setTimeout(() => burst(width * 0.76, height * 0.3, 32, burstKind), 330);
+            window.setTimeout(() => spawnShockwave(width * 0.5, height * 0.4), 120);
+        }, 170);
+        window.setTimeout(() => body.classList.remove("opening"), 1450);
     }
 
     function replay() {
         body.classList.remove("opened");
+        body.classList.add("opening");
         audio.stop();
         syncSoundControl();
         window.setTimeout(() => {
             body.classList.add("opened");
-            audio.start().then(syncSoundControl);
-            burst(width * 0.5, height * 0.34, 34, theme === "new-year" ? "spark" : "confetti");
+            audio.start({ restart: true });
+            syncSoundControl();
+            spiralBurst(width * 0.5, height * 0.42, 108, theme === "new-year" ? "spark" : "confetti");
+            spawnShockwave(width * 0.5, height * 0.42);
+            window.setTimeout(() => body.classList.remove("opening"), 1300);
         }, 760);
     }
 
@@ -920,7 +1650,12 @@
             }
             handlePointer(event);
             if (body.classList.contains("opened")) {
-                burst(event.clientX, event.clientY, 12, theme === "peace" ? "bubble" : "spark");
+                if (audio.pendingPlay) {
+                    audio.playBackgroundTrack(false);
+                }
+                audio.effect("tap");
+                burst(event.clientX, event.clientY, 20, theme === "peace" ? "bubble" : "spark");
+                spawnShockwave(event.clientX, event.clientY);
             }
         });
         document.addEventListener("visibilitychange", () => {
@@ -942,7 +1677,10 @@
     function init() {
         injectToolbar();
         personalize();
+        audio.prepare();
         resize();
+        splitBlessingTitle();
+        createWordHeart();
         bindEvents();
         nextBurst = elapsed + 900;
         animationFrame = requestAnimationFrame(animate);
