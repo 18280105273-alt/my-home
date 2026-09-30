@@ -477,7 +477,7 @@ button {
 .combat-message {
   position: absolute;
   z-index: 9;
-  top: 118px;
+  top: 196px;
   left: 50%;
   min-width: 180px;
   padding: 8px 14px;
@@ -1291,7 +1291,7 @@ kbd {
   }
 
   .combat-message {
-    top: 88px;
+    top: 172px;
   }
 }
 
@@ -1412,7 +1412,7 @@ kbd {
   }
 
   .combat-message {
-    top: 88px;
+    top: 172px;
   }
 
   .arena {
