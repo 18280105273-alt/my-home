@@ -233,6 +233,26 @@ button {
   display: block;
 }
 
+.vibrate-button .vibrate-off {
+  display: none;
+}
+
+.vibrate-button.is-off {
+  color: var(--muted);
+}
+
+.vibrate-button.is-off .vibrate-on {
+  display: none;
+}
+
+.vibrate-button.is-off .vibrate-off {
+  display: block;
+}
+
+.vibrate-button[hidden] {
+  display: none;
+}
+
 .stage {
   min-height: 0;
   padding: 12px;
@@ -890,6 +910,70 @@ kbd {
   flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
+}
+
+.map-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 auto 16px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.map-picker-label {
+  color: var(--amber-bright);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.map-select {
+  min-width: 118px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: rgba(10, 15, 14, 0.72);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.map-select:focus-visible {
+  border-color: rgba(255, 214, 110, 0.6);
+  outline: none;
+}
+
+.map-select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.map-rotate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.map-rotate input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+
+.map-rotate input:disabled {
+  cursor: default;
 }
 
 .online-button {

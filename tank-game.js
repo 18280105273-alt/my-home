@@ -38,6 +38,11 @@
   const aimPad = document.getElementById("aimPad");
   const aimKnob = document.getElementById("aimKnob");
   const soundButton = document.getElementById("soundButton");
+  const vibrateButton = document.getElementById("vibrateButton");
+  const campaignMapSelect = document.getElementById("campaignMapSelect");
+  const campaignMapRotateToggle = document.getElementById("campaignMapRotate");
+  const versusMapSelect = document.getElementById("versusMapSelect");
+  const versusMapRotateToggle = document.getElementById("versusMapRotate");
   const recordStrip = document.getElementById("recordStrip");
   const recordScore = document.getElementById("recordScore");
   const recordWave = document.getElementById("recordWave");
@@ -70,6 +75,69 @@
   const finalKillsLabel = document.getElementById("finalKillsLabel");
 
   const WORLD = { width: 2400, height: 1600 };
+  const ARENA_LAYOUT_NAMES = [
+    "中央堡垒",
+    "四门回廊",
+    "双环工事",
+    "随机散阵",
+    "十字掩体",
+    "双塔对峙",
+    "四角要塞",
+    "走廊迷宫",
+    "散点阵地",
+    "交错掩护",
+  ];
+
+  function layoutName(index) {
+    const total = ARENA_LAYOUT_NAMES.length;
+    if (!Number.isInteger(index)) return ARENA_LAYOUT_NAMES[0];
+    return ARENA_LAYOUT_NAMES[((index % total) + total) % total];
+  }
+
+  function populateMapOptions(select) {
+    ARENA_LAYOUT_NAMES.forEach((name, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `${index + 1}. ${name}`;
+      select.appendChild(option);
+    });
+  }
+
+  // 地图选择：随机或指定；固定或按波次/回合轮换
+  function mapIndexFromChoice(choice, rotate, round, seedText) {
+    const total = ARENA_LAYOUT_NAMES.length;
+    const step = Math.max(1, Math.round(round)) - 1;
+    const seed = layoutIndexFromCode(seedText || "tank-arena");
+    if (choice === MAP_RANDOM || choice === null || choice === undefined) {
+      const base = ((seed % total) + total) % total;
+      return rotate ? (base + step) % total : base;
+    }
+    const picked = Number(choice);
+    if (!Number.isInteger(picked)) {
+      const base = ((seed % total) + total) % total;
+      return rotate ? (base + step) % total : base;
+    }
+    const base = ((picked % total) + total) % total;
+    return rotate ? (base + step) % total : base;
+  }
+
+  function campaignMapIndex(round) {
+    return mapIndexFromChoice(
+      campaignMapChoice,
+      campaignMapRotate,
+      round,
+      campaignMapSeed
+    );
+  }
+
+  function versusMapIndex(round) {
+    return mapIndexFromChoice(
+      VERSUS.mapChoice,
+      VERSUS.mapRotate,
+      round,
+      VERSUS.roomCode || "versus"
+    );
+  }
   const COLORS = {
     ground: "#17201e",
     groundDeep: "#111918",
@@ -374,6 +442,7 @@
   const STORAGE_KEYS = {
     best: "tank-game:best-record",
     muted: "tank-game:muted",
+    vibration: "tank-game:vibration",
   };
   const EMPTY_RECORD = { score: 0, wave: 0, kills: 0 };
   const textCache = new WeakMap();
@@ -382,8 +451,14 @@
   const ammoPipState = { size: -1, magazine: -1, reloading: null };
   let bestRecord = readRecord();
   let soundMuted = readMuted();
+  let vibrationEnabled = readVibration();
+  const MAP_RANDOM = "random";
+  let campaignMapChoice = MAP_RANDOM;
+  let campaignMapRotate = true;
+  let campaignMapSeed = String(Math.floor(Math.random() * 100000));
   let playerCanFire = true;
   let remoteTank = null;
+  let lowArmorWarned = false;
 
   // 联机对战状态：房间码通过公共 MQTT 中继交换，无需自建服务器
   const VERSUS = {
@@ -398,6 +473,19 @@
     target: 3,
     pendingOver: false,
     lastWinner: null,
+    mapChoice: MAP_RANDOM,
+    mapRotate: false,
+    mapReady: false,
+    started: false,
+  };
+
+  // 双人对战道具：由房主权威生成，双方同步拾取
+  const VERSUS_ITEMS = {
+    spawnTimer: 7,
+    interval: 9,
+    max: 3,
+    lifetime: 26,
+    seq: 0,
   };
 
   const NET = {
@@ -409,6 +497,7 @@
     ],
     topicPrefix: "lizhongxing-tank-arena/v1/",
     clients: [],
+    allClients: [],
     clientBrokerIndexes: [],
     peerBrokerIndex: -1,
     labels: [],
@@ -417,6 +506,8 @@
     clientId: "",
     peerId: "",
     seq: 0,
+    lastPeerSeq: 0,
+    warnedPeerLag: false,
     seen: new Set(),
     seenOrder: [],
     pc: null,
@@ -430,6 +521,8 @@
     connected: false,
     connecting: false,
     peerOnline: false,
+    peerHelloAck: false,
+    helloCount: 0,
     lastReceiveAt: 0,
     lastStateAt: 0,
     lastHelloAt: 0,
@@ -474,6 +567,22 @@
       window.localStorage.setItem(STORAGE_KEYS.muted, muted ? "1" : "0");
     } catch (error) {
       // 同上，存储不可用时仅本次会话生效。
+    }
+  }
+
+  function readVibration() {
+    try {
+      return window.localStorage.getItem(STORAGE_KEYS.vibration) !== "0";
+    } catch (error) {
+      return true;
+    }
+  }
+
+  function writeVibration(enabled) {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.vibration, enabled ? "1" : "0");
+    } catch (error) {
+      // 存储不可用时仅本次会话生效。
     }
   }
 
@@ -540,6 +649,10 @@
   class Sound {
     constructor() {
       this.muted = false;
+      this.master = null;
+      this.noiseBuffer = null;
+      this.lastHitAt = 0;
+      this.lastShotAt = 0;
     }
 
     ensure() {
@@ -548,64 +661,232 @@
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (AudioContext) audioContext = new AudioContext();
       }
-      if (audioContext && audioContext.state === "suspended") {
+      if (!audioContext) return;
+
+      if (!this.master) {
+        // 挂一个压缩器，保证爆炸等大动态音效叠加时不爆音
+        const master = audioContext.createGain();
+        master.gain.value = 1.2;
+        const compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.value = -14;
+        compressor.knee.value = 22;
+        compressor.ratio.value = 8;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.22;
+        master.connect(compressor);
+        compressor.connect(audioContext.destination);
+        this.master = master;
+      }
+
+      if (audioContext.state === "suspended") {
         audioContext.resume().catch(() => {});
       }
     }
 
-    tone(frequency, duration, type = "sine", volume = 0.035, endFrequency = null) {
-      if (!audioContext || this.muted) return;
-      const now = audioContext.currentTime;
+    tone(frequency, duration, type = "sine", volume = 0.035, endFrequency = null, delay = 0) {
+      if (!audioContext || this.muted || !this.master) return;
+      const start = audioContext.currentTime + Math.max(0, delay);
       const oscillator = audioContext.createOscillator();
       const gain = audioContext.createGain();
       oscillator.type = type;
-      oscillator.frequency.setValueAtTime(frequency, now);
+      oscillator.frequency.setValueAtTime(Math.max(20, frequency), start);
       if (endFrequency) {
-        oscillator.frequency.exponentialRampToValueAtTime(Math.max(30, endFrequency), now + duration);
+        oscillator.frequency.exponentialRampToValueAtTime(
+          Math.max(20, endFrequency),
+          start + duration
+        );
       }
-      gain.gain.setValueAtTime(volume, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      // 快速淡入淡出，避免出现爆音咔嗒声
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume, start + Math.min(0.012, duration * 0.3));
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
       oscillator.connect(gain);
-      gain.connect(audioContext.destination);
-      oscillator.start(now);
-      oscillator.stop(now + duration);
+      gain.connect(this.master);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.03);
+    }
+
+    noise(duration, volume = 0.06, startFrequency = 1600, endFrequency = 140, delay = 0) {
+      if (!audioContext || this.muted || !this.master) return;
+      if (!this.noiseBuffer) {
+        const length = Math.floor(audioContext.sampleRate * 0.7);
+        const buffer = audioContext.createBuffer(1, length, audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let index = 0; index < length; index += 1) {
+          data[index] = Math.random() * 2 - 1;
+        }
+        this.noiseBuffer = buffer;
+      }
+
+      const start = audioContext.currentTime + Math.max(0, delay);
+      const source = audioContext.createBufferSource();
+      source.buffer = this.noiseBuffer;
+      const filter = audioContext.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(Math.max(80, startFrequency), start);
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(60, endFrequency),
+        start + duration
+      );
+      const gain = audioContext.createGain();
+      gain.gain.setValueAtTime(volume, start);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.master);
+      source.start(start);
+      source.stop(start + duration + 0.03);
     }
 
     shot() {
-      this.tone(150, 0.09, "square", 0.028, 70);
+      const now = performance.now();
+      if (now - this.lastShotAt < 60) return;
+      this.lastShotAt = now;
+      this.tone(220, 0.12, "square", 0.055, 62);
+      this.tone(92, 0.18, "sine", 0.05, 42);
+      this.noise(0.1, 0.05, 2600, 380);
     }
 
     enemyShot() {
-      this.tone(110, 0.08, "sawtooth", 0.018, 58);
+      this.tone(150, 0.1, "sawtooth", 0.032, 56);
+      this.noise(0.07, 0.028, 1500, 300);
     }
 
     hit() {
-      this.tone(82, 0.12, "square", 0.025, 42);
+      const now = performance.now();
+      if (now - this.lastHitAt < 45) return;
+      this.lastHitAt = now;
+      this.tone(340, 0.06, "square", 0.05, 150);
+      this.noise(0.09, 0.055, 3200, 700);
     }
 
     explosion() {
-      this.tone(65, 0.28, "sawtooth", 0.04, 28);
+      this.noise(0.55, 0.14, 1500, 90);
+      this.tone(72, 0.5, "sine", 0.12, 26);
+      this.tone(155, 0.24, "sawtooth", 0.055, 42);
     }
 
     pickup() {
-      this.tone(520, 0.1, "sine", 0.035, 880);
+      this.tone(560, 0.1, "sine", 0.05, 880);
+      this.tone(880, 0.16, "sine", 0.045, 1320, 0.09);
     }
 
     shockwave() {
-      this.tone(180, 0.4, "sine", 0.055, 42);
+      this.tone(250, 0.62, "sine", 0.14, 30);
+      this.noise(0.5, 0.1, 1000, 80);
     }
 
     laser() {
-      this.tone(880, 0.24, "sawtooth", 0.035, 180);
+      this.tone(1500, 0.22, "sawtooth", 0.05, 220);
+      this.tone(760, 0.18, "square", 0.03, 180);
+    }
+
+    reload() {
+      this.noise(0.05, 0.05, 2600, 900);
+      this.tone(180, 0.06, "square", 0.04, 90, 0.13);
+    }
+
+    kill() {
+      this.tone(520, 0.09, "triangle", 0.06, 660);
+      this.tone(780, 0.18, "triangle", 0.055, 1180, 0.09);
+    }
+
+    roundWin() {
+      [523, 659, 784, 1046].forEach((frequency, index) => {
+        this.tone(frequency, 0.24, "triangle", 0.06, frequency, index * 0.12);
+      });
+    }
+
+    roundLose() {
+      [392, 330, 247].forEach((frequency, index) => {
+        this.tone(frequency, 0.32, "sawtooth", 0.05, frequency * 0.86, index * 0.15);
+      });
+    }
+
+    warn() {
+      this.tone(880, 0.12, "square", 0.055, 880);
+      this.tone(880, 0.12, "square", 0.055, 880, 0.2);
+    }
+
+    denied() {
+      this.tone(190, 0.18, "square", 0.055, 110);
+      this.tone(95, 0.24, "sawtooth", 0.045, 58, 0.05);
+    }
+
+    connected() {
+      this.tone(660, 0.16, "sine", 0.05, 660);
+      this.tone(990, 0.2, "sine", 0.05, 990, 0.1);
     }
 
     wave() {
-      this.tone(330, 0.16, "triangle", 0.035, 440);
-      window.setTimeout(() => this.tone(440, 0.2, "triangle", 0.03, 660), 120);
+      [330, 440, 660].forEach((frequency, index) => {
+        this.tone(frequency, 0.22, "triangle", 0.055, frequency * 1.08, index * 0.11);
+      });
+    }
+
+    // 低频重击：iOS 没有网页震动接口，用 40~60Hz 的低频让机身物理震动
+    thump(strength = 1) {
+      const level = clamp(strength, 0.5, 2);
+      const duration = 0.07 + 0.05 * level;
+      this.tone(62 - 10 * level, duration, "sine", Math.min(0.62, 0.2 + 0.17 * level), 32);
+      this.noise(0.05, 0.05 * level, 240, 70);
+    }
+  }
+
+  // 触屏震动：安卓等用系统震动接口，iOS 用低频音频替代
+  class Haptics {
+    constructor() {
+      this.enabled = true;
+      this.hasNative =
+        typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+      const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      this.isIos =
+        /iPad|iPhone|iPod/.test(ua) ||
+        (typeof navigator !== "undefined" &&
+          navigator.platform === "MacIntel" &&
+          navigator.maxTouchPoints > 1);
+      this.supported = this.hasNative || this.isIos;
+      this.lastAt = 0;
+    }
+
+    play(pattern, minGap = 0) {
+      if (!this.enabled || !this.supported) return;
+      const now = performance.now();
+      if (minGap && now - this.lastAt < minGap) return;
+      this.lastAt = now;
+
+      if (this.hasNative) {
+        try {
+          navigator.vibrate(pattern);
+        } catch (error) {
+          // 部分浏览器在无用户手势时会拒绝，忽略即可
+        }
+        return;
+      }
+
+      if (!this.isIos) return;
+
+      // iOS：把震动节奏映射成一串低频重击
+      if (Array.isArray(pattern)) {
+        const strength = clamp(pattern.length / 3, 0.6, 1.8);
+        let offset = 0;
+        pattern.slice(0, 6).forEach((segment, index) => {
+          if (index % 2 === 0) {
+            const delay = offset;
+            const weight = 0.7 + Math.min(segment, 140) / 240;
+            window.setTimeout(() => sound.thump(strength * weight), delay);
+          }
+          offset += segment;
+        });
+        return;
+      }
+
+      sound.thump(clamp((Number(pattern) || 24) / 55, 0.6, 1.6));
     }
   }
 
   const sound = new Sound();
+  const haptics = new Haptics();
 
   // ---------------------------------------------------------------------------
   // 联机模块：用公共 MQTT 中继转发双方状态，不依赖自建后端
@@ -684,7 +965,12 @@
 
   function buildMessage(payload) {
     NET.seq += 1;
-    const message = { ...payload, from: NET.clientId, id: `${NET.clientId}-${NET.seq}` };
+    const message = {
+      ...payload,
+      from: NET.clientId,
+      id: `${NET.clientId}-${NET.seq}`,
+      q: NET.seq,
+    };
     if (payload.t === "state") message.ts = Date.now();
     return JSON.stringify(message);
   }
@@ -696,6 +982,16 @@
     } catch (error) {
       // 直连发送失败时静默忽略，中继仍可用
     }
+  }
+
+  // 打招呼时带上地图选择，房主的选择通过它同步给对手
+  function sendHello(type = "hello") {
+    netSend({
+      t: type,
+      role: VERSUS.role,
+      mc: VERSUS.mapChoice,
+      mr: VERSUS.mapRotate ? 1 : 0,
+    });
   }
 
   function netStart(role, roomCode) {
@@ -713,6 +1009,18 @@
     VERSUS.myScore = 0;
     VERSUS.foeScore = 0;
     VERSUS.round = 1;
+    VERSUS.started = false;
+    if (role === "host") {
+      // 房主决定本局地图，随后通过 hello 同步给对手
+      VERSUS.mapChoice = versusMapSelect.value;
+      VERSUS.mapRotate = versusMapRotateToggle.checked;
+      VERSUS.mapReady = true;
+    } else {
+      VERSUS.mapChoice = MAP_RANDOM;
+      VERSUS.mapRotate = false;
+      VERSUS.mapReady = false;
+    }
+    syncMapUi();
 
     NET.clientId = makeClientId();
     NET.peerId = "";
@@ -729,6 +1037,8 @@
     NET.peerBrokerIndex = -1;
     NET.failedBrokers = 0;
     NET.retryCount = 0;
+    NET.peerHelloAck = false;
+    NET.helloCount = 0;
     NET.seq = 0;
     NET.seen = new Set();
     NET.seenOrder = [];
@@ -754,6 +1064,15 @@
         // 已断开时忽略
       }
     });
+    // 后台正在重连的客户端也要一并结束，避免泄漏
+    NET.allClients.forEach((client) => {
+      try {
+        client.end(true);
+      } catch (error) {
+        // 忽略
+      }
+    });
+    NET.allClients = [];
     NET.clients = [];
     NET.clientBrokerIndexes = [];
     NET.labels = [];
@@ -766,6 +1085,8 @@
     NET.connecting = false;
     NET.peerOnline = false;
     NET.latency = 0;
+    NET.lastPeerSeq = 0;
+    NET.warnedPeerLag = false;
     NET.topic = "";
   }
 
@@ -925,7 +1246,8 @@
       NET.latency = 0;
       updateNetStatus("online", "已直连对手");
       showMessage("已建立点对点直连", 1.8);
-      sound.pickup();
+      sound.connected();
+      haptics.play([12, 20, 12]);
     }
 
     handleNetMessage(payload);
@@ -939,38 +1261,32 @@
     NET.failedBrokers += 1;
     if (NET.clients.length > 0 || NET.failedBrokers < NET.brokers.length) return;
 
-    // 公共中继偶发限流，全部失败时过几秒整轮重试
-    NET.retryCount += 1;
-    if (NET.retryCount <= 2 && NET.topic) {
-      const delay = 2500 * NET.retryCount;
-      updateNetStatus("connecting", `中继不稳，${delay / 1000}s 后重试`);
-      window.setTimeout(() => {
-        if (!NET.topic || NET.clients.length > 0) return;
-        NET.failedBrokers = 0;
-        NET.brokers.forEach((broker, index) => connectBroker(broker, index));
-      }, delay);
-      return;
-    }
-
+    // 公共中继较慢或临时限流时不再放弃，交给 mqtt.js 持续重连
     NET.connecting = false;
-    updateNetStatus("offline", "中继连接失败");
-    roomHint.textContent = "公共中继都连不上，请检查网络后重试。";
+    updateNetStatus("connecting", "中继连接中，自动重试");
+    roomHint.textContent = "公共中继连接较慢，正在后台自动重试…";
   }
 
   function connectBroker(broker, index) {
     NET.connecting = true;
+    const mapLabel = VERSUS.roomCode
+      ? `地图：${layoutName(layoutIndexFromCode(VERSUS.roomCode))} · `
+      : "";
     roomHint.textContent =
-      VERSUS.role === "host" ? "等待对手输入房间码加入…" : "正在加入房间…";
+      VERSUS.role === "host"
+        ? `${mapLabel}等待对手加入…`
+        : `${mapLabel}正在加入…`;
 
-    let settled = false;
+    let firstAttempt = true;
     let client = null;
 
     try {
       client = mqtt.connect(broker.url, {
         clientId: NET.clientId,
-        keepalive: 30,
+        keepalive: 15,
         clean: true,
-        reconnectPeriod: 0,
+        // 交给 mqtt.js 自动重连：断线后能自行恢复，而不是永久失联
+        reconnectPeriod: 2000,
         connectTimeout: 8000,
         protocolVersion: 4,
       });
@@ -979,29 +1295,27 @@
       return;
     }
 
-    const giveUp = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try {
-        client.end(true);
-      } catch (error) {
-        // 忽略
-      }
-      markBrokerFailed();
+    NET.allClients.push(client);
+
+    // 首次连接超时只更新提示，客户端继续在后台重连
+    window.setTimeout(() => {
+      if (firstAttempt) markBrokerFailed();
     }, 9000);
 
     client.on("connect", () => {
-      settled = true;
-      window.clearTimeout(giveUp);
-      NET.clients.push(client);
-      NET.clientBrokerIndexes.push(index);
-      NET.labels.push(broker.label);
+      firstAttempt = false;
+      if (!NET.clients.includes(client)) {
+        NET.clients.push(client);
+        NET.clientBrokerIndexes.push(index);
+        NET.labels.push(broker.label);
+      }
       NET.connected = true;
       NET.connecting = false;
       NET.lastReceiveAt = performance.now();
       updateNetStatus("online", `已连接${NET.labels.join(" + ")}`);
+      // clean session 下每次连接（含重连）都要重新订阅
       client.subscribe(NET.topic, { qos: 0 });
-      netSend({ t: "hello", role: VERSUS.role });
+      sendHello();
     });
 
     client.on("message", (topic, buffer) => {
@@ -1014,27 +1328,23 @@
     });
 
     client.on("error", () => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(giveUp);
-      try {
-        client.end(true);
-      } catch (error) {
-        // 忽略
+      // 不结束客户端，交给自动重连
+      if (NET.clients.length === 0) {
+        updateNetStatus("connecting", "中继重连中…");
       }
-      markBrokerFailed();
     });
 
     client.on("close", () => {
       const position = NET.clients.indexOf(client);
-      if (position === -1) return;
-      NET.clients.splice(position, 1);
-      NET.clientBrokerIndexes.splice(position, 1);
-      NET.labels.splice(position, 1);
+      if (position !== -1) {
+        NET.clients.splice(position, 1);
+        NET.clientBrokerIndexes.splice(position, 1);
+        NET.labels.splice(position, 1);
+      }
       if (NET.peerBrokerIndex === index) NET.peerBrokerIndex = -1;
       if (NET.clients.length === 0) {
         NET.connected = false;
-        updateNetStatus("offline", "中继连接已断开");
+        updateNetStatus("connecting", "中继重连中…");
       } else {
         updateNetStatus("online", `已连接${NET.labels.join(" + ")}`);
       }
@@ -1055,31 +1365,66 @@
     }
 
     NET.lastReceiveAt = performance.now();
-    if (payload.from) NET.peerId = payload.from;
+    if (payload.from && payload.from !== NET.peerId) {
+      // 换了对手就重置序号基准
+      NET.peerId = payload.from;
+      NET.lastPeerSeq = 0;
+    }
 
     if (!NET.peerOnline) {
       NET.peerOnline = true;
       updateNetStatus("online", "对手已连接");
       roomHint.textContent = "对手已就位，正在进入战场…";
-      sound.pickup();
-      // 双方都靠"收到对方消息"判定就绪，随后各自进入倒计时
-      window.setTimeout(() => {
-        if (NET.peerOnline && VERSUS.phase === "lobby") startVersusMatch();
-      }, 500);
+      sound.connected();
+      // 开局握手在下面处理：房主等 hello-ack，加入方等收到地图选择
     }
 
     switch (payload.t) {
       case "hello":
-        netSend({ t: "hello-ack", role: VERSUS.role });
+        adoptHostMap(payload);
+        sendHello("hello-ack");
+        break;
+      case "hello-ack":
+        NET.peerHelloAck = true;
         break;
       case "state":
-        applyRemoteState(payload);
+        {
+          // 丢弃乱序或重复的旧状态包，避免对手位置来回抖动
+          const seq = Number(payload.q) || 0;
+          if (seq && seq <= NET.lastPeerSeq) break;
+          if (seq) NET.lastPeerSeq = seq;
+          applyRemoteState(payload);
+        }
         break;
       case "fire":
         spawnRemoteBullet(payload);
         break;
       case "hit":
         applyIncomingHit(payload);
+        break;
+      case "item":
+        if (payload.iid && !pickups.some((pickup) => pickup.id === payload.iid)) {
+          const kind = ["repair", "overdrive", "shield", "ammo"].includes(payload.k)
+            ? payload.k
+            : "repair";
+          const itemX = Number(payload.x) || 0;
+          const itemY = Number(payload.y) || 0;
+          pickups.push({
+            id: payload.iid,
+            x: itemX,
+            y: itemY,
+            radius: 18,
+            type: kind,
+            life: VERSUS_ITEMS.lifetime,
+            phase: Math.random() * Math.PI * 2,
+            networked: true,
+          });
+          createRing(itemX, itemY, 58, itemColor(kind), 0.55, 4);
+        }
+        break;
+      case "item-gone":
+      case "take":
+        pickups = pickups.filter((pickup) => pickup.id !== payload.iid);
         break;
       case "rtc-offer":
         handleRtcOffer(payload);
@@ -1119,6 +1464,33 @@
       default:
         break;
     }
+
+    maybeStartVersus();
+  }
+
+  // 加入方采用房主的地图选择
+  function adoptHostMap(payload) {
+    if (VERSUS.role !== "guest" || payload.mc === undefined) return;
+    const raw = payload.mc;
+    const picked = Number(raw);
+    VERSUS.mapChoice =
+      raw === MAP_RANDOM || raw === "random" || !Number.isInteger(picked)
+        ? MAP_RANDOM
+        : picked;
+    VERSUS.mapRotate = Boolean(payload.mr);
+    VERSUS.mapReady = true;
+    syncMapUi();
+    roomHint.textContent = `地图：${layoutName(versusMapIndex(1))} · 对手已就位`;
+  }
+
+  // 握手完成后再开局，避免双方用不同地图开打
+  function maybeStartVersus() {
+    if (VERSUS.started || VERSUS.phase !== "lobby") return;
+    const ready =
+      VERSUS.role === "host" ? NET.peerHelloAck : VERSUS.mapReady;
+    if (!ready) return;
+    VERSUS.started = true;
+    startVersusMatch();
   }
 
   function netTick(dt) {
@@ -1126,10 +1498,14 @@
     if (!VERSUS.active && VERSUS.phase !== "lobby") return;
     const now = performance.now();
 
-    // 大厅阶段持续打招呼，避免后加入的一方错过对方的第一条消息
-    if (!NET.peerOnline && now - NET.lastHelloAt > 1200) {
+    // 持续打招呼直到握手完成：房主要确认对手收到地图选择
+    const helloPending =
+      !NET.peerOnline ||
+      (VERSUS.role === "host" && !NET.peerHelloAck && NET.helloCount < 15);
+    if (helloPending && now - NET.lastHelloAt > 1200) {
       NET.lastHelloAt = now;
-      netSend({ t: "hello", role: VERSUS.role });
+      NET.helloCount += 1;
+      sendHello();
     }
 
     // 直连静默超时就自动降级回中继
@@ -1140,6 +1516,11 @@
     }
 
     // 左路负责发起直连：首轮给足 20 秒建立时间，避免打断正在进行中的 ICE 协商
+    // 三次尝试都用完后，隔一分钟允许重来（网络环境变化时还能重新连上）
+    if (!NET.p2pReady && NET.offerCount >= 3 && now - NET.lastOfferAt > 60000) {
+      NET.offerCount = 0;
+    }
+
     if (NET.peerOnline && !NET.p2pReady && mySide() === "left" && NET.offerCount < 3) {
       const sinceOffer = NET.lastOfferAt ? now - NET.lastOfferAt : Infinity;
       const canStart = !NET.pc || sinceOffer > 12000;
@@ -1149,8 +1530,9 @@
       }
     }
 
-    // 直连可用时把同步频率提到 30Hz
-    const stateInterval = NET.p2pReady ? 33 : 50;
+    // 直连可用时提到 30Hz；中继明显拥塞时降到 10Hz，避免越堵越发，位置由速度外推兜底
+    const congested = !NET.p2pReady && NET.latency > 600;
+    const stateInterval = NET.p2pReady ? 33 : congested ? 100 : 50;
     if (VERSUS.active && NET.peerOnline && now - NET.lastStateAt > stateInterval) {
       NET.lastStateAt = now;
       netSend({
@@ -1174,8 +1556,15 @@
       netSend({ t: "ping", at: Date.now() });
     }
 
-    if (NET.peerOnline && now - NET.lastReceiveAt > 8000) {
-      handlePeerLeft();
+    // 对手短暂掉线给宽限期，避免一次网络抖动就直接判负
+    if (NET.peerOnline) {
+      const silence = now - NET.lastReceiveAt;
+      if (silence > 4000 && silence <= 12000 && !NET.warnedPeerLag) {
+        NET.warnedPeerLag = true;
+        showMessage("对手网络不稳定，等待恢复…", 2.2);
+      }
+      if (silence <= 4000) NET.warnedPeerLag = false;
+      if (silence > 12000) handlePeerLeft();
     }
   }
 
@@ -1284,6 +1673,62 @@
         { x: 760, y: 760, w: 120, h: 72, type: "concrete" },
         { x: 1520, y: 760, w: 120, h: 72, type: "concrete" },
       ],
+      // 双塔对峙：两座立柱塔 + 中央横墙，中远距离对射
+      () => [
+        { x: 640, y: 520, w: 76, h: 260, type: "concrete" },
+        { x: 640, y: 820, w: 76, h: 260, type: "concrete" },
+        { x: 1684, y: 520, w: 76, h: 260, type: "concrete" },
+        { x: 1684, y: 820, w: 76, h: 260, type: "concrete" },
+        { x: 1000, y: 764, w: 400, h: 72, type: "wall" },
+        { x: 620, y: 1000, w: 120, h: 72, type: "concrete" },
+        { x: 1660, y: 1000, w: 120, h: 72, type: "concrete" },
+      ],
+      // 四角要塞：四个 L 形掩体角楼，中央独立方块
+      () => [
+        { x: 420, y: 380, w: 300, h: 72, type: "wall" },
+        { x: 420, y: 452, w: 72, h: 190, type: "wall" },
+        { x: 1680, y: 380, w: 300, h: 72, type: "wall" },
+        { x: 1908, y: 452, w: 72, h: 190, type: "wall" },
+        { x: 420, y: 1148, w: 300, h: 72, type: "wall" },
+        { x: 420, y: 958, w: 72, h: 190, type: "wall" },
+        { x: 1680, y: 1148, w: 300, h: 72, type: "wall" },
+        { x: 1908, y: 958, w: 72, h: 190, type: "wall" },
+        { x: 1120, y: 720, w: 160, h: 160, type: "concrete" },
+      ],
+      // 走廊迷宫：上下长墙夹出中庭，两侧错位立柱
+      () => [
+        { x: 360, y: 520, w: 560, h: 72, type: "concrete" },
+        { x: 1480, y: 520, w: 560, h: 72, type: "concrete" },
+        { x: 360, y: 1008, w: 560, h: 72, type: "concrete" },
+        { x: 1480, y: 1008, w: 560, h: 72, type: "concrete" },
+        { x: 1080, y: 360, w: 72, h: 260, type: "wall" },
+        { x: 1248, y: 980, w: 72, h: 260, type: "wall" },
+        { x: 1080, y: 1240, w: 72, h: 200, type: "concrete" },
+        { x: 1248, y: 160, w: 72, h: 200, type: "concrete" },
+      ],
+      // 散点阵地：四角方块 + 中央双横墙，适合绕柱缠斗
+      () => [
+        { x: 560, y: 400, w: 120, h: 120, type: "concrete" },
+        { x: 1720, y: 400, w: 120, h: 120, type: "concrete" },
+        { x: 560, y: 1080, w: 120, h: 120, type: "concrete" },
+        { x: 1720, y: 1080, w: 120, h: 120, type: "concrete" },
+        { x: 1040, y: 640, w: 320, h: 72, type: "wall" },
+        { x: 1040, y: 888, w: 320, h: 72, type: "wall" },
+        { x: 900, y: 740, w: 72, h: 120, type: "concrete" },
+        { x: 1428, y: 740, w: 72, h: 120, type: "concrete" },
+      ],
+      // 交错掩护：左右交错的窄墙，压迫走位与视线
+      () => [
+        { x: 700, y: 700, w: 72, h: 200, type: "wall" },
+        { x: 900, y: 500, w: 72, h: 200, type: "wall" },
+        { x: 1428, y: 900, w: 72, h: 200, type: "wall" },
+        { x: 1628, y: 700, w: 72, h: 200, type: "wall" },
+        { x: 1100, y: 760, w: 200, h: 80, type: "concrete" },
+        { x: 460, y: 1080, w: 220, h: 72, type: "concrete" },
+        { x: 1720, y: 448, w: 220, h: 72, type: "concrete" },
+        { x: 460, y: 448, w: 220, h: 72, type: "wall" },
+        { x: 1720, y: 1080, w: 220, h: 72, type: "wall" },
+      ],
     ];
 
     if (Number.isInteger(forceIndex)) {
@@ -1306,6 +1751,7 @@
       });
     }
     arena.dataset.layout = String(arenaLayoutIndex + 1);
+    arena.dataset.layoutName = layoutName(arenaLayoutIndex);
   }
 
   function createPlayer() {
@@ -1329,6 +1775,7 @@
       fireDelay: 0.2,
       muzzleFlash: 0,
       overdrive: 0,
+      shieldTimer: 0,
       invulnerable: 0,
       hitFlash: 0,
       damageMultiplier: 1,
@@ -1389,7 +1836,7 @@
   }
 
   function resetGame() {
-    createArena();
+    createArena(campaignMapIndex(1));
     player = createPlayer();
     const spawn = findSafePlayerSpawn();
     player.x = spawn.x;
@@ -1403,6 +1850,7 @@
     wave = 0;
     score = 0;
     kills = 0;
+    lowArmorWarned = false;
     intermission = 3;
     pendingBuffChoices = [];
     spawnClock = 0;
@@ -1418,6 +1866,10 @@
 
   function beginGame() {
     sound.ensure();
+    // 每次开新战役都读一次地图设置，并让"随机"真正换一张图
+    campaignMapChoice = campaignMapSelect.value;
+    campaignMapRotate = campaignMapRotateToggle.checked;
+    campaignMapSeed = String(Math.floor(Math.random() * 100000));
     netClose();
     VERSUS.active = false;
     VERSUS.phase = "idle";
@@ -1528,6 +1980,37 @@
     if (!muted) sound.ensure();
   }
 
+  function syncVibrationUi() {
+    vibrateButton.hidden = !haptics.supported;
+    vibrateButton.classList.toggle("is-off", !vibrationEnabled);
+    vibrateButton.setAttribute("aria-pressed", vibrationEnabled ? "true" : "false");
+    vibrateButton.setAttribute(
+      "aria-label",
+      vibrationEnabled ? "震动已开启，点击关闭" : "震动已关闭，点击开启"
+    );
+  }
+
+  function setVibrationEnabled(enabled) {
+    vibrationEnabled = enabled;
+    haptics.enabled = enabled;
+    syncVibrationUi();
+    writeVibration(enabled);
+    // 打开时立刻给一次反馈，方便确认效果
+    if (enabled) haptics.play(24);
+  }
+
+  function syncMapUi() {
+    campaignMapSelect.value = String(campaignMapChoice);
+    campaignMapRotateToggle.checked = campaignMapRotate;
+
+    // 联机地图由房主决定，加入方只读展示
+    versusMapSelect.value = String(VERSUS.mapChoice);
+    versusMapRotateToggle.checked = VERSUS.mapRotate;
+    const lockedForGuest = VERSUS.role === "guest";
+    versusMapSelect.disabled = lockedForGuest;
+    versusMapRotateToggle.disabled = lockedForGuest;
+  }
+
   // ---------------------------------------------------------------------------
   // 双人对战流程：房间 → 倒计时 → 交火 → 回合结算
   // ---------------------------------------------------------------------------
@@ -1588,6 +2071,71 @@
     };
   }
 
+  function itemColor(type) {
+    if (type === "repair") return "#72d89a";
+    if (type === "overdrive") return "#ffd66e";
+    if (type === "shield") return "#6fb8ff";
+    return "#79e2d3";
+  }
+
+  function itemName(type) {
+    if (type === "repair") return "装甲修复";
+    if (type === "overdrive") return "火力超载";
+    if (type === "shield") return "护盾展开";
+    return "弹药补给";
+  }
+
+  function applyPickupEffect(type) {
+    if (type === "repair") {
+      player.health = Math.min(player.maxHealth, player.health + 38);
+    } else if (type === "ammo") {
+      player.magazine = player.magazineSize;
+      player.reloadTimer = 0;
+    } else if (type === "shield") {
+      player.shieldTimer = 9;
+    } else {
+      player.overdrive = 8;
+      player.magazine = player.magazineSize;
+      player.reloadTimer = 0;
+    }
+    updateAmmoPips();
+    showMessage(itemName(type), 1.2);
+  }
+
+  // 房主负责刷新道具，并把生成的坐标广播给对手
+  function spawnVersusItem() {
+    if (!VERSUS.active || VERSUS.phase !== "live") return;
+    if (pickups.length >= VERSUS_ITEMS.max) return;
+
+    const kinds = ["repair", "overdrive", "shield", "ammo"];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const x = randomRange(240, WORLD.width - 240);
+      const y = randomRange(240, WORLD.height - 240);
+      if (tankCollides(x, y, 26)) continue;
+      if (distance({ x, y }, player) < 300) continue;
+      if (remoteTank && distance({ x, y }, remoteTank) < 300) continue;
+
+      VERSUS_ITEMS.seq += 1;
+      const id = `${NET.clientId}-item-${VERSUS_ITEMS.seq}`;
+      pickups.push({
+        id,
+        x,
+        y,
+        radius: 18,
+        type: kind,
+        life: VERSUS_ITEMS.lifetime,
+        phase: Math.random() * Math.PI * 2,
+        networked: true,
+      });
+      // 注意：消息里的 id 已被 buildMessage 用作去重标识，道具 ID 必须换字段名
+      netSend({ t: "item", iid: id, x, y, k: kind });
+      createRing(x, y, 58, itemColor(kind), 0.55, 4);
+      return;
+    }
+  }
+
   function startVersusMatch() {
     if (!VERSUS.role) return;
     VERSUS.active = true;
@@ -1596,6 +2144,8 @@
     VERSUS.round = 1;
     VERSUS.pendingOver = false;
     VERSUS.lastWinner = null;
+    VERSUS_ITEMS.spawnTimer = 7;
+    VERSUS_ITEMS.seq = 0;
     gameState = "playing";
     onlineOverlay.classList.remove("visible");
     startOverlay.classList.remove("visible");
@@ -1605,11 +2155,14 @@
     foeReadout.hidden = false;
     resetVersusRound();
     sound.wave();
-    showMessage("对战开始 · 先到 3 分获胜", 2.2);
+    showMessage(
+      `对战开始 · ${layoutName(arenaLayoutIndex)} · 先到 3 分获胜`,
+      2.4
+    );
   }
 
   function resetVersusRound() {
-    createArena(layoutIndexFromCode(VERSUS.roomCode));
+    createArena(versusMapIndex(VERSUS.round));
     player = createPlayer();
     const mySpawn = versusSpawnFor(mySide());
     player.x = mySpawn.x;
@@ -1638,6 +2191,7 @@
     VERSUS.timer = 3;
     VERSUS.lastWinner = null;
     playerCanFire = false;
+    lowArmorWarned = false;
 
     createRing(player.x, player.y, 110, COLORS.teal, 0.7, 5);
     createRing(remoteTank.x, remoteTank.y, 110, "#d2604a", 0.7, 5);
@@ -1664,6 +2218,16 @@
     if (VERSUS.phase === "live") {
       setText(waveLabel, "比分");
       setText(waveTimer, `${VERSUS.myScore} : ${VERSUS.foeScore}`);
+
+      // 房主定时在场地内刷新道具
+      if (mySide() === "left") {
+        VERSUS_ITEMS.spawnTimer -= dt;
+        if (VERSUS_ITEMS.spawnTimer <= 0) {
+          VERSUS_ITEMS.spawnTimer = VERSUS_ITEMS.interval;
+          spawnVersusItem();
+        }
+      }
+
       // 对手血量归零时本方也自行结算，避免单条消息丢失导致比分不同步
       if (remoteTank && remoteTank.round === VERSUS.round && remoteTank.health <= 0) {
         resolveVersusRound(mySide(), true, VERSUS.round);
@@ -1832,17 +2396,23 @@
     if (remoteTank.health <= 0) {
       createExplosion(remoteTank.x, remoteTank.y, "#d2604a", 30);
       camera.shake = Math.max(camera.shake, 10);
+      sound.kill();
+      haptics.play([25, 35, 55]);
     }
   }
 
   function applyIncomingHit(payload) {
     if (!VERSUS.active || VERSUS.phase !== "live") return;
-    const damage = clamp(Number(payload.d) || 0, 0, 60);
+    const incoming = clamp(Number(payload.d) || 0, 0, 60);
+    // 护盾期间减伤 55%
+    const damage = player.shieldTimer > 0 ? incoming * 0.45 : incoming;
     player.health = Math.max(0, player.health - damage);
     player.hitFlash = 0.18;
     camera.shake = Math.max(camera.shake, 8);
     createBurst(player.x, player.y, "#ff9f72", 8, 130);
     sound.hit();
+    haptics.play(45, 60);
+    warnLowArmor();
 
     if (player.health <= 0) {
       createExplosion(player.x, player.y, COLORS.player, 30);
@@ -1871,6 +2441,13 @@
 
     showMessage(iWon ? "本回合胜利" : "本回合失利", 2);
     sound.explosion();
+    if (iWon) {
+      sound.roundWin();
+      haptics.play([40, 60, 40, 60, 90]);
+    } else {
+      sound.roundLose();
+      haptics.play([180]);
+    }
   }
 
   function endVersusMatch() {
@@ -1892,6 +2469,13 @@
 
     gameOverOverlay.classList.add("visible");
     sound.wave();
+    if (iWon) {
+      sound.roundWin();
+      haptics.play([60, 80, 60, 80, 160]);
+    } else {
+      sound.roundLose();
+      haptics.play([220]);
+    }
   }
 
   function showOnlineLobby() {
@@ -1900,6 +2484,7 @@
     VERSUS.phase = "lobby";
     VERSUS.role = null;
     VERSUS.roomCode = "";
+    syncMapUi();
     playerCanFire = true;
     remoteTank = null;
     foeReadout.hidden = true;
@@ -1931,7 +2516,8 @@
     roomCodeInput.value = code;
     if (code.length !== 6) {
       onlineStatus.textContent = "房间码是 6 位字符，请检查后重新输入。";
-      sound.hit();
+      sound.denied();
+      haptics.play([40, 50, 40]);
       roomCodeInput.focus();
       return;
     }
@@ -2121,7 +2707,7 @@
   }
 
   function rebuildArenaForNextWave() {
-    createArena();
+    createArena(campaignMapIndex(wave));
     const spawn = findSafePlayerSpawn();
     player.x = spawn.x;
     player.y = spawn.y;
@@ -2308,6 +2894,7 @@
     player.hitFlash = Math.max(0, player.hitFlash - dt);
     player.invulnerable = Math.max(0, player.invulnerable - dt);
     player.overdrive = Math.max(0, player.overdrive - dt);
+    player.shieldTimer = Math.max(0, player.shieldTimer - dt);
 
     if (player.reloadTimer > 0) {
       player.reloadTimer -= dt;
@@ -2385,9 +2972,10 @@
     player.muzzleFlash = 0.08;
     player.vx -= Math.cos(lastAngle) * 13;
     player.vy -= Math.sin(lastAngle) * 13;
-    createMuzzleParticles(muzzleX, muzzleY, lastAngle, COLORS.bullet);
-    updateAmmoPips();
-    sound.shot();
+      createMuzzleParticles(muzzleX, muzzleY, lastAngle, COLORS.bullet);
+      updateAmmoPips();
+      sound.shot();
+      haptics.play(8, 80);
 
     if (player.magazine <= 0) startReload();
   }
@@ -2395,6 +2983,7 @@
   function startReload() {
     if (player.reloadTimer > 0 || player.magazine === player.magazineSize) return;
     player.reloadTimer = 1.18 * player.reloadMultiplier;
+    sound.reload();
     showMessage("自动装填", 0.85);
   }
 
@@ -2473,6 +3062,7 @@
     createRing(player.x, player.y, radius, COLORS.teal, 0.8, 9);
     createRing(player.x, player.y, radius * 0.64, "#d9fff9", 0.55, 5);
     sound.shockwave();
+    haptics.play(70);
 
     bullets = bullets.filter((bullet) => {
       const incoming =
@@ -2890,6 +3480,8 @@
     camera.shake = Math.max(camera.shake, enemy.typeName === "heavy" ? 12 : 6);
     createExplosion(enemy.x, enemy.y, enemy.type.color, enemy.typeName === "heavy" ? 30 : 18);
     sound.explosion();
+    sound.kill();
+    haptics.play([25, 35, 55]);
 
     if (Math.random() < (enemy.typeName === "heavy" ? 0.72 : 0.2)) {
       const type = Math.random() < 0.58 ? "repair" : "overdrive";
@@ -2904,6 +3496,19 @@
     }
   }
 
+  // 血量过低时给出一次听觉与触觉警告，回血后重新武装
+  function warnLowArmor() {
+    if (!player) return;
+    const ratio = player.health / player.maxHealth;
+    if (ratio <= 0.3 && !lowArmorWarned) {
+      lowArmorWarned = true;
+      sound.warn();
+      haptics.play([30, 70, 30]);
+    } else if (ratio > 0.38) {
+      lowArmorWarned = false;
+    }
+  }
+
   function damagePlayer(damage) {
     if (player.invulnerable > 0 || gameState !== "playing") return;
     const reducedDamage = Math.max(1, damage * (1 - player.damageReduction));
@@ -2913,9 +3518,12 @@
     camera.shake = 8;
     createBurst(player.x, player.y, "#ff9f72", 8, 130);
     sound.hit();
+    haptics.play(45, 60);
+    warnLowArmor();
 
     if (player.health <= 0) {
       createExplosion(player.x, player.y, COLORS.player, 32);
+      haptics.play([120, 60, 160]);
       endGame();
     }
   }
@@ -2925,20 +3533,22 @@
     pickups.forEach((pickup) => {
       pickup.life -= dt;
       pickup.phase += dt * 3;
-      if (pickup.life <= 0) return;
+      if (pickup.life <= 0) {
+        // 房主广播过期，避免两边残留不一致
+        if (VERSUS.active && pickup.networked && mySide() === "left") {
+          netSend({ t: "item-gone", iid: pickup.id });
+        }
+        return;
+      }
 
       if (distance(pickup, player) < player.radius + pickup.radius + 4) {
-        if (pickup.type === "repair") {
-          player.health = Math.min(player.maxHealth, player.health + 38);
-          showMessage("装甲修复 +38", 1.2);
-        } else {
-          player.overdrive = 8;
-          player.magazine = player.magazineSize;
-          player.reloadTimer = 0;
-          showMessage("火力超载", 1.2);
-        }
-        createRing(pickup.x, pickup.y, 52, pickup.type === "repair" ? "#78d39c" : "#ffd66e", 0.45);
+        applyPickupEffect(pickup.type);
+        createRing(pickup.x, pickup.y, 52, itemColor(pickup.type), 0.45);
         sound.pickup();
+        haptics.play([18, 25, 35]);
+        if (VERSUS.active && pickup.networked) {
+          netSend({ t: "take", iid: pickup.id });
+        }
         return;
       }
       remaining.push(pickup);
@@ -3257,6 +3867,17 @@
     const lightColor = isPlayer ? COLORS.playerLight : "#f2b27e";
     const flash = tank.hitFlash > 0;
 
+    if (isPlayer && tank.shieldTimer > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.34 + 0.2 * Math.abs(Math.sin(elapsed * 5));
+      ctx.strokeStyle = "#6fb8ff";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(tank.x, tank.y, tank.radius + 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (!isPlayer && tank.elite) {
       ctx.save();
       ctx.translate(tank.x, tank.y);
@@ -3463,7 +4084,7 @@
   function drawPickups() {
     pickups.forEach((pickup) => {
       const bob = Math.sin(pickup.phase) * 4;
-      const color = pickup.type === "repair" ? "#72d89a" : "#ffd66e";
+      const color = itemColor(pickup.type);
       ctx.save();
       ctx.translate(pickup.x, pickup.y + bob);
       ctx.rotate(pickup.phase * 0.22);
@@ -3481,6 +4102,20 @@
       if (pickup.type === "repair") {
         ctx.fillRect(-4, -10, 8, 20);
         ctx.fillRect(-10, -4, 20, 8);
+      } else if (pickup.type === "shield") {
+        ctx.beginPath();
+        ctx.moveTo(0, -12);
+        ctx.lineTo(9, -7);
+        ctx.lineTo(9, 3);
+        ctx.quadraticCurveTo(9, 10, 0, 13);
+        ctx.quadraticCurveTo(-9, 10, -9, 3);
+        ctx.lineTo(-9, -7);
+        ctx.closePath();
+        ctx.fill();
+      } else if (pickup.type === "ammo") {
+        [-7, 0, 7].forEach((offset) => {
+          ctx.fillRect(offset - 2, -8, 4, 16);
+        });
       } else {
         ctx.beginPath();
         ctx.moveTo(1, -11);
@@ -3779,6 +4414,26 @@
         joinRoomByCode();
       }
     });
+    campaignMapSelect.addEventListener("change", () => {
+      campaignMapChoice = campaignMapSelect.value;
+      campaignMapRotate = campaignMapRotateToggle.checked;
+      campaignMapSeed = String(Math.floor(Math.random() * 100000));
+    });
+    campaignMapRotateToggle.addEventListener("change", () => {
+      campaignMapRotate = campaignMapRotateToggle.checked;
+      campaignMapSeed = String(Math.floor(Math.random() * 100000));
+    });
+    versusMapSelect.addEventListener("change", () => {
+      if (VERSUS.role === "guest") return;
+      VERSUS.mapChoice = versusMapSelect.value;
+      VERSUS.mapReady = true;
+      syncMapUi();
+    });
+    versusMapRotateToggle.addEventListener("change", () => {
+      if (VERSUS.role === "guest") return;
+      VERSUS.mapRotate = versusMapRotateToggle.checked;
+      syncMapUi();
+    });
     buffCards.addEventListener("click", (event) => {
       const card = event.target.closest(".buff-card");
       if (!card) return;
@@ -3790,6 +4445,9 @@
     });
     soundButton.addEventListener("click", () => {
       setSoundMuted(!soundMuted);
+    });
+    vibrateButton.addEventListener("click", () => {
+      setVibrationEnabled(!vibrationEnabled);
     });
     specialButton.addEventListener("pointerdown", (event) => {
       event.preventDefault();
@@ -3824,6 +4482,11 @@
   resizeCanvas();
   sound.muted = soundMuted;
   syncSoundUi();
+  haptics.enabled = vibrationEnabled;
+  syncVibrationUi();
+  populateMapOptions(campaignMapSelect);
+  populateMapOptions(versusMapSelect);
+  syncMapUi();
   renderBestRecord();
   updateAmmoPips();
   updateHud();
