@@ -3709,7 +3709,19 @@
   }
 
   function bindInputs() {
+    // 在输入框里打字时不接管键盘，否则 WASD 会被游戏按键的 preventDefault 吞掉
+    const isTypingTarget = (event) => {
+      const target = event.target;
+      if (!target) return false;
+      return (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable === true
+      );
+    };
+
     window.addEventListener("keydown", (event) => {
+      if (isTypingTarget(event)) return;
       if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) {
         event.preventDefault();
       }
@@ -3723,6 +3735,7 @@
     });
 
     window.addEventListener("keyup", (event) => {
+      if (isTypingTarget(event)) return;
       keys.delete(event.code);
     });
 
