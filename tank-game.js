@@ -1091,7 +1091,7 @@
         rememberRemoteCandidate(payload.c);
         break;
       case "round":
-        resolveVersusRound(payload.w, false);
+        resolveVersusRound(payload.w, false, Number(payload.r) || 0);
         break;
       case "rematch":
         if (VERSUS.active && VERSUS.phase === "over") {
@@ -1165,6 +1165,7 @@
         m: player.maxHealth,
         o: player.overdrive > 0 ? 1 : 0,
         s: VERSUS.myScore,
+        r: VERSUS.round,
       });
     }
 
@@ -1577,6 +1578,7 @@
       targetTurret: 0,
       health: 100,
       maxHealth: 100,
+      round: 1,
       muzzleFlash: 0,
       hitFlash: 0,
       elite: false,
@@ -1663,8 +1665,8 @@
       setText(waveLabel, "比分");
       setText(waveTimer, `${VERSUS.myScore} : ${VERSUS.foeScore}`);
       // 对手血量归零时本方也自行结算，避免单条消息丢失导致比分不同步
-      if (remoteTank && remoteTank.health <= 0) {
-        resolveVersusRound(mySide(), true);
+      if (remoteTank && remoteTank.round === VERSUS.round && remoteTank.health <= 0) {
+        resolveVersusRound(mySide(), true, VERSUS.round);
       }
       return;
     }
@@ -1745,10 +1747,23 @@
     remoteTank.vy = vy;
     remoteTank.targetBody = Number(payload.b) || 0;
     remoteTank.targetTurret = Number(payload.a) || 0;
-    remoteTank.maxHealth = Number(payload.m) || 100;
-    remoteTank.health = clamp(Number(payload.h) || 0, 0, remoteTank.maxHealth);
-    remoteTank.overdrive = Boolean(payload.o);
-    remoteTank.alive = remoteTank.health > 0;
+
+    // 只接受同一回合的血量数据：跨回合的过期包会把"上回合已阵亡"误判成本回合的击杀
+    const stateRound = Number(payload.r) || 0;
+    remoteTank.round = stateRound;
+    if (stateRound === VERSUS.round) {
+      remoteTank.maxHealth = Number(payload.m) || 100;
+      remoteTank.health = clamp(Number(payload.h) || 0, 0, remoteTank.maxHealth);
+      remoteTank.overdrive = Boolean(payload.o);
+      remoteTank.alive = remoteTank.health > 0;
+
+     }
+
+    // 对方对自己得分的记录最权威，出现偏差时以对方为准，避免比分漂移
+    const peerScore = Number(payload.s);
+    if (Number.isFinite(peerScore) && peerScore !== VERSUS.foeScore) {
+      VERSUS.foeScore = peerScore;
+    }
   }
 
   function spawnRemoteBullet(payload) {
@@ -1831,13 +1846,15 @@
 
     if (player.health <= 0) {
       createExplosion(player.x, player.y, COLORS.player, 30);
-      resolveVersusRound(foeSide(), true);
+      resolveVersusRound(foeSide(), true, VERSUS.round);
     }
   }
 
-  function resolveVersusRound(winnerSide, broadcast) {
+  function resolveVersusRound(winnerSide, broadcast, round) {
     if (!VERSUS.active) return;
     if (VERSUS.phase !== "live") return;
+    // 忽略来自其它回合的结算消息，避免重复记分
+    if (round && round !== VERSUS.round) return;
 
     VERSUS.phase = "roundEnd";
     VERSUS.timer = 3.2;
@@ -1848,7 +1865,7 @@
     if (iWon) VERSUS.myScore += 1;
     else VERSUS.foeScore += 1;
 
-    if (broadcast) netSend({ t: "round", w: winnerSide });
+    if (broadcast) netSend({ t: "round", w: winnerSide, r: VERSUS.round });
     VERSUS.pendingOver =
       VERSUS.myScore >= VERSUS.target || VERSUS.foeScore >= VERSUS.target;
 
