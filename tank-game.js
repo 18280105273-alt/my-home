@@ -403,10 +403,14 @@
   const NET = {
     brokers: [
       { url: "wss://broker.emqx.io:8084/mqtt", label: "EMQX 中继" },
+      { url: "wss://broker-cn.emqx.io:8084/mqtt", label: "EMQX 中国" },
       { url: "wss://test.mosquitto.org:8081/", label: "Mosquitto 中继" },
+      { url: "wss://broker.hivemq.com:8884/mqtt", label: "HiveMQ 中继" },
     ],
     topicPrefix: "lizhongxing-tank-arena/v1/",
     clients: [],
+    clientBrokerIndexes: [],
+    peerBrokerIndex: -1,
     labels: [],
     failedBrokers: 0,
     retryCount: 0,
@@ -415,6 +419,13 @@
     seq: 0,
     seen: new Set(),
     seenOrder: [],
+    pc: null,
+    channel: null,
+    p2pReady: false,
+    p2pLastReceive: 0,
+    offerCount: 0,
+    lastOfferAt: 0,
+    pendingCandidates: [],
     topic: "",
     connected: false,
     connecting: false,
@@ -630,18 +641,61 @@
   }
 
   function netSend(payload) {
-    if (!NET.clients.length) return;
+    const channelOpen =
+      NET.p2pReady && NET.channel && NET.channel.readyState === "open";
+    if (!channelOpen && !NET.clients.length) return;
+
+    const text = buildMessage(payload);
+
+    if (channelOpen) {
+      try {
+        NET.channel.send(text);
+      } catch (error) {
+        // 直连发送失败时下面仍会走中继
+      }
+    }
+
+    // 只有关键事件用 QoS 1；心跳和状态用 QoS 0，避免公共中继重投递造成过期消息
+    const reliable =
+      payload.t === "hit" ||
+      payload.t === "round" ||
+      payload.t === "rematch" ||
+      payload.t === "bye";
+    const qos = reliable ? 1 : 0;
+
+    // 高频状态只发对端活跃的那条中继；关键事件发全部中继做冗余
+    const targets = payload.t === "state" ? statePublishTargets() : NET.clients;
+    targets.forEach((client) => {
+      try {
+        // 页面关闭或中继正在断开时不再发布，避免产生无意义的 WebSocket 报错
+        if (!client.connected) return;
+        client.publish(NET.topic, text, { qos });
+      } catch (error) {
+        // 单条中继异常不影响其它中继
+      }
+    });
+  }
+
+  function statePublishTargets() {
+    if (NET.peerBrokerIndex < 0 || !NET.clients.length) return NET.clients;
+    const position = NET.clientBrokerIndexes.indexOf(NET.peerBrokerIndex);
+    return position === -1 ? NET.clients : [NET.clients[position]];
+  }
+
+  function buildMessage(payload) {
     NET.seq += 1;
     const message = { ...payload, from: NET.clientId, id: `${NET.clientId}-${NET.seq}` };
     if (payload.t === "state") message.ts = Date.now();
-    const text = JSON.stringify(message);
-    NET.clients.forEach((client) => {
-      try {
-        client.publish(NET.topic, text, { qos: 0 });
-      } catch (error) {
-        // 单条中继异常不影响另一条
-      }
-    });
+    return JSON.stringify(message);
+  }
+
+  function sendOnChannel(payload) {
+    if (!NET.channel || NET.channel.readyState !== "open") return;
+    try {
+      NET.channel.send(buildMessage(payload));
+    } catch (error) {
+      // 直连发送失败时静默忽略，中继仍可用
+    }
   }
 
   function netStart(role, roomCode) {
@@ -670,7 +724,9 @@
     NET.lastStateAt = 0;
     NET.lastPingAt = 0;
     NET.clients = [];
+    NET.clientBrokerIndexes = [];
     NET.labels = [];
+    NET.peerBrokerIndex = -1;
     NET.failedBrokers = 0;
     NET.retryCount = 0;
     NET.seq = 0;
@@ -699,12 +755,184 @@
       }
     });
     NET.clients = [];
+    NET.clientBrokerIndexes = [];
     NET.labels = [];
+    NET.peerBrokerIndex = -1;
+    closePeerLink();
+    NET.offerCount = 0;
+    NET.lastOfferAt = 0;
+    NET.pendingCandidates = [];
     NET.connected = false;
     NET.connecting = false;
     NET.peerOnline = false;
     NET.latency = 0;
     NET.topic = "";
+  }
+
+  // ---------------------------------------------------------------------------
+  // WebRTC 直连：MQTT 只用来交换 SDP，连上后游戏数据点对点直传
+  // ---------------------------------------------------------------------------
+  const RTC_CONFIG = {
+    iceServers: [
+      { urls: "stun:stun.qq.com:3478" },
+      { urls: "stun:stun.miwifi.com:3478" },
+      { urls: "stun:stun.chat.bilibili.com:3478" },
+      { urls: "stun:stun.l.google.com:19302" },
+    ],
+    iceCandidatePoolSize: 2,
+  };
+
+  function closePeerLink() {
+    const wasReady = NET.p2pReady;
+    NET.p2pReady = false;
+    // 换路径后旧的延迟样本会失真，重置读数
+    if (wasReady) NET.latency = 0;
+    if (NET.channel) {
+      try {
+        NET.channel.close();
+      } catch (error) {
+        // 忽略
+      }
+      NET.channel = null;
+    }
+    if (NET.pc) {
+      try {
+        NET.pc.close();
+      } catch (error) {
+        // 忽略
+      }
+      NET.pc = null;
+    }
+  }
+
+  function attachDataChannel(channel) {
+    NET.channel = channel;
+    channel.onopen = () => {
+      NET.p2pLastReceive = performance.now();
+      // 先证明双向都通，再整体切到直连，避免单边可用导致掉线
+      sendOnChannel({ t: "p2p-hello", role: VERSUS.role });
+    };
+    channel.onclose = () => {
+      NET.p2pReady = false;
+    };
+    channel.onerror = () => {
+      NET.p2pReady = false;
+    };
+    channel.onmessage = (event) => {
+      NET.p2pLastReceive = performance.now();
+      handleRawMessage(event.data, "p2p");
+    };
+  }
+
+  function rememberRemoteCandidate(candidate) {
+    if (!candidate || !NET.pc) return;
+    if (!NET.pc.remoteDescription) {
+      // 远端描述还没设好时先排队，等 setRemoteDescription 之后统一补入
+      NET.pendingCandidates.push(candidate);
+      return;
+    }
+    NET.pc.addIceCandidate(candidate).catch(() => {});
+  }
+
+  function flushRemoteCandidates() {
+    if (!NET.pc || !NET.pc.remoteDescription) return;
+    const queued = NET.pendingCandidates;
+    NET.pendingCandidates = [];
+    queued.forEach((candidate) => {
+      NET.pc.addIceCandidate(candidate).catch(() => {});
+    });
+  }
+
+  function createPeerConnection() {
+    if (NET.pc) return NET.pc;
+    if (typeof RTCPeerConnection === "undefined") return null;
+
+    let pc = null;
+    try {
+      pc = new RTCPeerConnection(RTC_CONFIG);
+    } catch (error) {
+      return null;
+    }
+
+    NET.pc = pc;
+    pc.onicecandidate = (event) => {
+      // trickle ICE：候选一收集到就单独发，双方都要发
+      if (event.candidate) netSend({ t: "rtc-ice", c: event.candidate.toJSON() });
+    };
+    pc.ondatachannel = (event) => attachDataChannel(event.channel);
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      if (state === "failed" || state === "closed") closePeerLink();
+      else if (state === "disconnected") NET.p2pReady = false;
+    };
+    return pc;
+  }
+
+  function startPeerLink() {
+    if (NET.pc || !NET.peerId) return;
+    if (mySide() !== "left") return;
+
+    const pc = createPeerConnection();
+    if (!pc) return;
+
+    NET.offerCount += 1;
+    NET.lastOfferAt = performance.now();
+    attachDataChannel(
+      pc.createDataChannel("tank", { ordered: false, maxRetransmits: 0 })
+    );
+    pc.createOffer()
+      .then((offer) => pc.setLocalDescription(offer))
+      .then(() => netSend({ t: "rtc-offer", sdp: pc.localDescription.sdp }))
+      .catch(() => closePeerLink());
+  }
+
+  function handleRtcOffer(payload) {
+    if (!payload.sdp || mySide() === "left") return;
+    // 对端重发 offer（首次连接超时后重试）时重建连接
+    if (NET.pc && NET.pc.currentRemoteDescription) closePeerLink();
+    const pc = createPeerConnection();
+    if (!pc) return;
+
+    pc.setRemoteDescription({ type: "offer", sdp: payload.sdp })
+      .then(() => flushRemoteCandidates())
+      .then(() => pc.createAnswer())
+      .then((answer) => pc.setLocalDescription(answer))
+      .then(() => netSend({ t: "rtc-answer", sdp: pc.localDescription.sdp }))
+      .catch(() => closePeerLink());
+  }
+
+  function handleRtcAnswer(payload) {
+    if (!payload.sdp || !NET.pc || NET.pc.currentRemoteDescription) return;
+    NET.pc
+      .setRemoteDescription({ type: "answer", sdp: payload.sdp })
+      .then(() => flushRemoteCandidates())
+      .catch(() => closePeerLink());
+  }
+
+  function parseMessage(raw) {
+    try {
+      return JSON.parse(typeof raw === "string" ? raw : raw.toString());
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function handlePayload(payload, transport) {
+    if (!payload) return;
+
+    if (transport === "p2p" && !NET.p2pReady) {
+      NET.p2pReady = true;
+      NET.latency = 0;
+      updateNetStatus("online", "已直连对手");
+      showMessage("已建立点对点直连", 1.8);
+      sound.pickup();
+    }
+
+    handleNetMessage(payload);
+  }
+
+  function handleRawMessage(raw, transport = "mqtt") {
+    handlePayload(parseMessage(raw), transport);
   }
 
   function markBrokerFailed() {
@@ -719,7 +947,7 @@
       window.setTimeout(() => {
         if (!NET.topic || NET.clients.length > 0) return;
         NET.failedBrokers = 0;
-        NET.brokers.forEach((broker) => connectBroker(broker));
+        NET.brokers.forEach((broker, index) => connectBroker(broker, index));
       }, delay);
       return;
     }
@@ -729,7 +957,7 @@
     roomHint.textContent = "公共中继都连不上，请检查网络后重试。";
   }
 
-  function connectBroker(broker) {
+  function connectBroker(broker, index) {
     NET.connecting = true;
     roomHint.textContent =
       VERSUS.role === "host" ? "等待对手输入房间码加入…" : "正在加入房间…";
@@ -766,6 +994,7 @@
       settled = true;
       window.clearTimeout(giveUp);
       NET.clients.push(client);
+      NET.clientBrokerIndexes.push(index);
       NET.labels.push(broker.label);
       NET.connected = true;
       NET.connecting = false;
@@ -777,13 +1006,11 @@
 
     client.on("message", (topic, buffer) => {
       if (topic !== NET.topic) return;
-      let payload = null;
-      try {
-        payload = JSON.parse(buffer.toString());
-      } catch (error) {
-        return;
-      }
-      handleNetMessage(payload);
+      const payload = parseMessage(buffer);
+      if (!payload) return;
+      // 记录对端在哪条中继上活跃，高频状态包只发这一条以降低公共中继压力
+      if (payload.from && payload.from !== NET.clientId) NET.peerBrokerIndex = index;
+      handlePayload(payload, "mqtt");
     });
 
     client.on("error", () => {
@@ -802,7 +1029,9 @@
       const position = NET.clients.indexOf(client);
       if (position === -1) return;
       NET.clients.splice(position, 1);
+      NET.clientBrokerIndexes.splice(position, 1);
       NET.labels.splice(position, 1);
+      if (NET.peerBrokerIndex === index) NET.peerBrokerIndex = -1;
       if (NET.clients.length === 0) {
         NET.connected = false;
         updateNetStatus("offline", "中继连接已断开");
@@ -852,6 +1081,15 @@
       case "hit":
         applyIncomingHit(payload);
         break;
+      case "rtc-offer":
+        handleRtcOffer(payload);
+        break;
+      case "rtc-answer":
+        handleRtcAnswer(payload);
+        break;
+      case "rtc-ice":
+        rememberRemoteCandidate(payload.c);
+        break;
       case "round":
         resolveVersusRound(payload.w, false);
         break;
@@ -866,11 +1104,13 @@
         break;
       case "pong":
         {
-          // 公共中继偶发抖动，取加权平均让读数稳定
-          const sample = Math.max(0, Date.now() - payload.at);
-          NET.latency = NET.latency
-            ? Math.round(NET.latency * 0.7 + sample * 0.3)
-            : sample;
+          // 公共中继偶发抖动，过滤异常样本并取加权平均让读数稳定
+          const sample = Date.now() - payload.at;
+          if (sample >= 0 && sample < 4000) {
+            NET.latency = NET.latency
+              ? Math.round(NET.latency * 0.7 + sample * 0.3)
+              : sample;
+          }
         }
         break;
       case "bye":
@@ -882,7 +1122,7 @@
   }
 
   function netTick(dt) {
-    if (!NET.connected) return;
+    if (!NET.connected && !NET.p2pReady) return;
     if (!VERSUS.active && VERSUS.phase !== "lobby") return;
     const now = performance.now();
 
@@ -892,12 +1132,33 @@
       netSend({ t: "hello", role: VERSUS.role });
     }
 
-    if (VERSUS.active && NET.peerOnline && now - NET.lastStateAt > 66) {
+    // 直连静默超时就自动降级回中继
+    if (NET.p2pReady && now - NET.p2pLastReceive > 2500) {
+      closePeerLink();
+      showMessage("直连中断，已切回中继", 1.8);
+      updateNetStatus("online", `已连接${NET.labels.join(" + ")}`);
+    }
+
+    // 左路负责发起直连：首轮给足 20 秒建立时间，避免打断正在进行中的 ICE 协商
+    if (NET.peerOnline && !NET.p2pReady && mySide() === "left" && NET.offerCount < 3) {
+      const sinceOffer = NET.lastOfferAt ? now - NET.lastOfferAt : Infinity;
+      const canStart = !NET.pc || sinceOffer > 12000;
+      if (canStart && sinceOffer > 3000) {
+        closePeerLink();
+        startPeerLink();
+      }
+    }
+
+    // 直连可用时把同步频率提到 30Hz
+    const stateInterval = NET.p2pReady ? 33 : 50;
+    if (VERSUS.active && NET.peerOnline && now - NET.lastStateAt > stateInterval) {
       NET.lastStateAt = now;
       netSend({
         t: "state",
         x: Math.round(player.x * 10) / 10,
         y: Math.round(player.y * 10) / 10,
+        vx: Math.round(player.vx),
+        vy: Math.round(player.vy),
         b: Math.round(player.bodyAngle * 100) / 100,
         a: Math.round(player.turretAngle * 100) / 100,
         h: Math.max(0, Math.round(player.health)),
@@ -1305,6 +1566,10 @@
       y: spawn.y,
       targetX: spawn.x,
       targetY: spawn.y,
+      vx: 0,
+      vy: 0,
+      errorX: 0,
+      errorY: 0,
       radius: 24,
       bodyAngle: 0,
       turretAngle: 0,
@@ -1424,14 +1689,27 @@
 
   function updateRemoteTank(dt) {
     if (!remoteTank) return;
-    const blend = Math.min(1, 12 * dt);
-    remoteTank.x = lerp(remoteTank.x, remoteTank.targetX, blend);
-    remoteTank.y = lerp(remoteTank.y, remoteTank.targetY, blend);
-    remoteTank.bodyAngle = lerpAngle(remoteTank.bodyAngle, remoteTank.targetBody, blend);
+
+    // 先按对手上报的速度外推，让对手坦克不再"卡在过去的时刻"
+    remoteTank.x += remoteTank.vx * dt;
+    remoteTank.y += remoteTank.vy * dt;
+
+    // 再把与权威位置的偏差平滑消掉（约 110ms 收敛），避免瞬移跳帧
+    const correction = 1 - Math.exp(-9 * dt);
+    remoteTank.x += remoteTank.errorX * correction;
+    remoteTank.y += remoteTank.errorY * correction;
+    remoteTank.errorX *= 1 - correction;
+    remoteTank.errorY *= 1 - correction;
+
+    remoteTank.bodyAngle = lerpAngle(
+      remoteTank.bodyAngle,
+      remoteTank.targetBody,
+      Math.min(1, 20 * dt)
+    );
     remoteTank.turretAngle = lerpAngle(
       remoteTank.turretAngle,
       remoteTank.targetTurret,
-      Math.min(1, 18 * dt)
+      Math.min(1, 26 * dt)
     );
     remoteTank.muzzleFlash = Math.max(0, remoteTank.muzzleFlash - dt);
     remoteTank.hitFlash = Math.max(0, remoteTank.hitFlash - dt);
@@ -1441,10 +1719,30 @@
     if (!remoteTank) return;
     const x = Number(payload.x);
     const y = Number(payload.y);
+    const vx = Number(payload.vx) || 0;
+    const vy = Number(payload.vy) || 0;
     if (Number.isFinite(x) && Number.isFinite(y)) {
-      remoteTank.targetX = x;
-      remoteTank.targetY = y;
+      // 状态包描述的是"发出时刻"的位置，按单向延迟补偿到"当前时刻"
+      const oneWay = clamp((NET.latency || 0) / 2000, 0, 0.5);
+      const targetX = x + vx * oneWay;
+      const targetY = y + vy * oneWay;
+
+      const jump = Math.hypot(targetX - remoteTank.x, targetY - remoteTank.y);
+      if (jump > 280) {
+        // 复活、传送等大跳变直接对齐，不做事后修正
+        remoteTank.x = targetX;
+        remoteTank.y = targetY;
+        remoteTank.errorX = 0;
+        remoteTank.errorY = 0;
+      } else {
+        remoteTank.errorX = targetX - remoteTank.x;
+        remoteTank.errorY = targetY - remoteTank.y;
+      }
+      remoteTank.targetX = targetX;
+      remoteTank.targetY = targetY;
     }
+    remoteTank.vx = vx;
+    remoteTank.vy = vy;
     remoteTank.targetBody = Number(payload.b) || 0;
     remoteTank.targetTurret = Number(payload.a) || 0;
     remoteTank.maxHealth = Number(payload.m) || 100;
@@ -1461,10 +1759,16 @@
     const x = Number.isFinite(originX) ? originX : remoteTank ? remoteTank.x : player.x;
     const y = Number.isFinite(originY) ? originY : remoteTank ? remoteTank.y : player.y;
 
+    // 消息在路上花掉的时间里炮弹已经飞了一段，按单程延迟补上，避免画面"晚发射"
+    const oneWayDelay = clamp((NET.latency || 0) / 2000, 0, 0.4);
+    const travelCompensation = speed * oneWayDelay;
+    const bulletX = x + Math.cos(angle) * travelCompensation;
+    const bulletY = y + Math.sin(angle) * travelCompensation;
+
     // 对手的炮弹只做视觉表现，命中判定由开火方本地计算后发 "hit" 通知
     bullets.push({
-      x,
-      y,
+      x: bulletX,
+      y: bulletY,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       radius: 5,
@@ -2772,7 +3076,9 @@
       setText(difficultyLabel, `先到 ${VERSUS.target} 分获胜`);
       setText(
         buffCountLabel,
-        `${VERSUS.role === "host" ? "房主" : "加入方"} · ${NET.latency}ms`
+        `${VERSUS.role === "host" ? "房主" : "加入方"} · ${
+          NET.p2pReady ? "直连" : "中继"
+        } · ${NET.latency}ms`
       );
       const foeRatio = remoteTank
         ? clamp(remoteTank.health / remoteTank.maxHealth, 0, 1)
