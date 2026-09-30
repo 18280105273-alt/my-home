@@ -26,3 +26,22 @@ const revealObserver = new IntersectionObserver(
 );
 
 revealItems.forEach((item) => revealObserver.observe(item));
+
+// 我的网站区块：按类型筛选卡片
+const filterButtons = document.querySelectorAll('.filter-chip');
+const siteCards = document.querySelectorAll('.site-card');
+
+filterButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const filter = button.dataset.filter;
+
+    filterButtons.forEach((item) => {
+      item.classList.toggle('is-active', item === button);
+    });
+
+    siteCards.forEach((card) => {
+      const matched = filter === 'all' || card.dataset.category === filter;
+      card.classList.toggle('is-hidden', !matched);
+    });
+  });
+});
