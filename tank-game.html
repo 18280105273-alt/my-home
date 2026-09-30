@@ -22,11 +22,11 @@
 
         <div class="topbar-actions">
           <div class="status-chip">
-            <span>波次</span>
+            <span id="waveChipLabel">波次</span>
             <strong id="waveValue">01</strong>
           </div>
           <div class="status-chip score-chip">
-            <span>得分</span>
+            <span id="scoreChipLabel">得分</span>
             <strong id="scoreValue">000000</strong>
           </div>
           <button class="icon-button" id="pauseButton" type="button" aria-label="暂停游戏">
@@ -90,6 +90,11 @@
               <strong id="waveTimer">3</strong>
               <small id="difficultyLabel">威胁 x1.0</small>
               <small id="buffCountLabel">强化 0</small>
+              <div class="foe-readout" id="foeReadout" hidden>
+                <span class="foe-name">对手装甲</span>
+                <div class="meter foe-meter"><span id="foeHealthBar"></span></div>
+                <strong class="foe-value" id="foeHealthText">100</strong>
+              </div>
             </div>
 
             <div class="vital-card energy-card">
@@ -168,12 +173,61 @@
                 </div>
               </div>
 
-              <button class="primary-button" id="startButton" type="button">
-                <span>开始战斗</span>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </button>
+              <div class="mode-row">
+                <button class="primary-button" id="startButton" type="button">
+                  <span>单人战役</span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </button>
+                <button class="secondary-button online-button" id="onlineButton" type="button">
+                  双人在线对战
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="overlay" id="onlineOverlay">
+            <div class="overlay-panel online-panel">
+              <p class="overlay-kicker">双人在线对战</p>
+              <h2>联机房间</h2>
+              <p class="overlay-copy" id="onlineStatus">
+                创建房间后把房间码发给朋友，对方输入房间码即可加入。
+              </p>
+
+              <div class="online-actions" id="onlineActions">
+                <button class="primary-button" id="createRoomButton" type="button">
+                  创建房间
+                </button>
+                <div class="join-row">
+                  <input
+                    class="room-input"
+                    id="roomCodeInput"
+                    type="text"
+                    maxlength="6"
+                    placeholder="输入 6 位房间码"
+                    autocomplete="off"
+                    autocapitalize="characters"
+                    spellcheck="false"
+                  />
+                  <button class="secondary-button" id="joinRoomButton" type="button">加入</button>
+                </div>
+              </div>
+
+              <div class="room-panel" id="roomPanel" hidden>
+                <span class="room-label">房间码</span>
+                <strong class="room-code" id="roomCodeText">------</strong>
+                <p class="room-hint" id="roomHint">正在连接中继服务器…</p>
+                <div class="room-status">
+                  <span class="net-dot" id="netDot"></span>
+                  <span id="netText">连接中</span>
+                  <span class="net-latency" id="netLatency"></span>
+                </div>
+              </div>
+
+              <div class="button-row">
+                <button class="secondary-button" id="leaveOnlineButton" type="button">返回</button>
+              </div>
             </div>
           </div>
 
@@ -203,19 +257,19 @@
 
           <div class="overlay" id="gameOverOverlay">
             <div class="overlay-panel compact-panel">
-              <p class="overlay-kicker danger-kicker">装甲损毁</p>
-              <h2>阵地失守</h2>
+              <p class="overlay-kicker danger-kicker" id="gameOverKicker">装甲损毁</p>
+              <h2 id="gameOverTitle">阵地失守</h2>
               <div class="result-grid">
                 <div>
-                  <span>最终得分</span>
+                  <span id="finalScoreLabel">最终得分</span>
                   <strong id="finalScore">0</strong>
                 </div>
                 <div>
-                  <span>抵达波次</span>
+                  <span id="finalWaveLabel">抵达波次</span>
                   <strong id="finalWave">1</strong>
                 </div>
                 <div>
-                  <span>击毁敌军</span>
+                  <span id="finalKillsLabel">击毁敌军</span>
                   <strong id="finalKills">0</strong>
                 </div>
               </div>
@@ -241,6 +295,7 @@
       </section>
     </main>
 
+    <script src="mqtt.min.js" defer></script>
     <script src="tank-game.js" defer></script>
   </body>
 </html>

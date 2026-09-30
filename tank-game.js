@@ -44,6 +44,30 @@
   const newRecordBadge = document.getElementById("newRecordBadge");
   const pauseLoadout = document.getElementById("pauseLoadout");
   const pauseLoadoutList = document.getElementById("pauseLoadoutList");
+  const onlineOverlay = document.getElementById("onlineOverlay");
+  const onlineButton = document.getElementById("onlineButton");
+  const onlineStatus = document.getElementById("onlineStatus");
+  const onlineActions = document.getElementById("onlineActions");
+  const createRoomButton = document.getElementById("createRoomButton");
+  const joinRoomButton = document.getElementById("joinRoomButton");
+  const roomCodeInput = document.getElementById("roomCodeInput");
+  const roomPanel = document.getElementById("roomPanel");
+  const roomCodeText = document.getElementById("roomCodeText");
+  const roomHint = document.getElementById("roomHint");
+  const netDot = document.getElementById("netDot");
+  const netText = document.getElementById("netText");
+  const netLatency = document.getElementById("netLatency");
+  const leaveOnlineButton = document.getElementById("leaveOnlineButton");
+  const foeReadout = document.getElementById("foeReadout");
+  const foeHealthBar = document.getElementById("foeHealthBar");
+  const foeHealthText = document.getElementById("foeHealthText");
+  const waveChipLabel = document.getElementById("waveChipLabel");
+  const scoreChipLabel = document.getElementById("scoreChipLabel");
+  const gameOverKicker = document.getElementById("gameOverKicker");
+  const gameOverTitle = document.getElementById("gameOverTitle");
+  const finalScoreLabel = document.getElementById("finalScoreLabel");
+  const finalWaveLabel = document.getElementById("finalWaveLabel");
+  const finalKillsLabel = document.getElementById("finalKillsLabel");
 
   const WORLD = { width: 2400, height: 1600 };
   const COLORS = {
@@ -358,6 +382,49 @@
   const ammoPipState = { size: -1, magazine: -1, reloading: null };
   let bestRecord = readRecord();
   let soundMuted = readMuted();
+  let playerCanFire = true;
+  let remoteTank = null;
+
+  // 联机对战状态：房间码通过公共 MQTT 中继交换，无需自建服务器
+  const VERSUS = {
+    active: false,
+    role: null,
+    roomCode: "",
+    phase: "idle",
+    timer: 0,
+    round: 1,
+    myScore: 0,
+    foeScore: 0,
+    target: 3,
+    pendingOver: false,
+    lastWinner: null,
+  };
+
+  const NET = {
+    brokers: [
+      { url: "wss://broker.emqx.io:8084/mqtt", label: "EMQX 中继" },
+      { url: "wss://test.mosquitto.org:8081/", label: "Mosquitto 中继" },
+    ],
+    topicPrefix: "lizhongxing-tank-arena/v1/",
+    clients: [],
+    labels: [],
+    failedBrokers: 0,
+    retryCount: 0,
+    clientId: "",
+    peerId: "",
+    seq: 0,
+    seen: new Set(),
+    seenOrder: [],
+    topic: "",
+    connected: false,
+    connecting: false,
+    peerOnline: false,
+    lastReceiveAt: 0,
+    lastStateAt: 0,
+    lastHelloAt: 0,
+    lastPingAt: 0,
+    latency: 0,
+  };
 
   function readRecord() {
     try {
@@ -529,7 +596,354 @@
 
   const sound = new Sound();
 
-  function createArena() {
+  // ---------------------------------------------------------------------------
+  // 联机模块：用公共 MQTT 中继转发双方状态，不依赖自建后端
+  // ---------------------------------------------------------------------------
+  const ROOM_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+  function makeRoomCode(length = 6) {
+    let code = "";
+    for (let index = 0; index < length; index += 1) {
+      code += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+    }
+    return code;
+  }
+
+  function makeClientId() {
+    return `tank-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  // 房间码决定地图，双方各自算出一致的地形，无需额外同步
+  function layoutIndexFromCode(code) {
+    let hash = 0;
+    for (let index = 0; index < code.length; index += 1) {
+      hash = (hash * 31 + code.charCodeAt(index)) % 100000;
+    }
+    return hash;
+  }
+
+  function updateNetStatus(kind, text) {
+    netDot.classList.remove("online", "offline");
+    if (kind === "online") netDot.classList.add("online");
+    if (kind === "offline") netDot.classList.add("offline");
+    setText(netText, text);
+  }
+
+  function netSend(payload) {
+    if (!NET.clients.length) return;
+    NET.seq += 1;
+    const message = { ...payload, from: NET.clientId, id: `${NET.clientId}-${NET.seq}` };
+    if (payload.t === "state") message.ts = Date.now();
+    const text = JSON.stringify(message);
+    NET.clients.forEach((client) => {
+      try {
+        client.publish(NET.topic, text, { qos: 0 });
+      } catch (error) {
+        // 单条中继异常不影响另一条
+      }
+    });
+  }
+
+  function netStart(role, roomCode) {
+    if (typeof mqtt === "undefined") {
+      onlineStatus.textContent = "联机组件加载失败，请刷新页面后重试。";
+      updateNetStatus("offline", "组件缺失");
+      return false;
+    }
+
+    netClose();
+    VERSUS.role = role;
+    VERSUS.roomCode = roomCode;
+    VERSUS.phase = "lobby";
+    VERSUS.active = false;
+    VERSUS.myScore = 0;
+    VERSUS.foeScore = 0;
+    VERSUS.round = 1;
+
+    NET.clientId = makeClientId();
+    NET.peerId = "";
+    NET.topic = `${NET.topicPrefix}${roomCode}`;
+    NET.peerOnline = false;
+    NET.latency = 0;
+    NET.lastReceiveAt = performance.now();
+    NET.lastHelloAt = 0;
+    NET.lastStateAt = 0;
+    NET.lastPingAt = 0;
+    NET.clients = [];
+    NET.labels = [];
+    NET.failedBrokers = 0;
+    NET.retryCount = 0;
+    NET.seq = 0;
+    NET.seen = new Set();
+    NET.seenOrder = [];
+
+    roomCodeText.textContent = roomCode;
+    roomPanel.hidden = false;
+    onlineActions.hidden = true;
+    setText(netLatency, "");
+    updateNetStatus("", "正在连接中继");
+    // 同时连接所有中继：只有双方至少在一条相同中继上，就能互相发现
+    NET.brokers.forEach((broker, index) => connectBroker(broker, index));
+    return true;
+  }
+
+  function netClose() {
+    if (NET.clients.length) {
+      netSend({ t: "bye" });
+    }
+    NET.clients.forEach((client) => {
+      try {
+        client.end(true);
+      } catch (error) {
+        // 已断开时忽略
+      }
+    });
+    NET.clients = [];
+    NET.labels = [];
+    NET.connected = false;
+    NET.connecting = false;
+    NET.peerOnline = false;
+    NET.latency = 0;
+    NET.topic = "";
+  }
+
+  function markBrokerFailed() {
+    NET.failedBrokers += 1;
+    if (NET.clients.length > 0 || NET.failedBrokers < NET.brokers.length) return;
+
+    // 公共中继偶发限流，全部失败时过几秒整轮重试
+    NET.retryCount += 1;
+    if (NET.retryCount <= 2 && NET.topic) {
+      const delay = 2500 * NET.retryCount;
+      updateNetStatus("connecting", `中继不稳，${delay / 1000}s 后重试`);
+      window.setTimeout(() => {
+        if (!NET.topic || NET.clients.length > 0) return;
+        NET.failedBrokers = 0;
+        NET.brokers.forEach((broker) => connectBroker(broker));
+      }, delay);
+      return;
+    }
+
+    NET.connecting = false;
+    updateNetStatus("offline", "中继连接失败");
+    roomHint.textContent = "公共中继都连不上，请检查网络后重试。";
+  }
+
+  function connectBroker(broker) {
+    NET.connecting = true;
+    roomHint.textContent =
+      VERSUS.role === "host" ? "等待对手输入房间码加入…" : "正在加入房间…";
+
+    let settled = false;
+    let client = null;
+
+    try {
+      client = mqtt.connect(broker.url, {
+        clientId: NET.clientId,
+        keepalive: 30,
+        clean: true,
+        reconnectPeriod: 0,
+        connectTimeout: 8000,
+        protocolVersion: 4,
+      });
+    } catch (error) {
+      markBrokerFailed();
+      return;
+    }
+
+    const giveUp = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        client.end(true);
+      } catch (error) {
+        // 忽略
+      }
+      markBrokerFailed();
+    }, 9000);
+
+    client.on("connect", () => {
+      settled = true;
+      window.clearTimeout(giveUp);
+      NET.clients.push(client);
+      NET.labels.push(broker.label);
+      NET.connected = true;
+      NET.connecting = false;
+      NET.lastReceiveAt = performance.now();
+      updateNetStatus("online", `已连接${NET.labels.join(" + ")}`);
+      client.subscribe(NET.topic, { qos: 0 });
+      netSend({ t: "hello", role: VERSUS.role });
+    });
+
+    client.on("message", (topic, buffer) => {
+      if (topic !== NET.topic) return;
+      let payload = null;
+      try {
+        payload = JSON.parse(buffer.toString());
+      } catch (error) {
+        return;
+      }
+      handleNetMessage(payload);
+    });
+
+    client.on("error", () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(giveUp);
+      try {
+        client.end(true);
+      } catch (error) {
+        // 忽略
+      }
+      markBrokerFailed();
+    });
+
+    client.on("close", () => {
+      const position = NET.clients.indexOf(client);
+      if (position === -1) return;
+      NET.clients.splice(position, 1);
+      NET.labels.splice(position, 1);
+      if (NET.clients.length === 0) {
+        NET.connected = false;
+        updateNetStatus("offline", "中继连接已断开");
+      } else {
+        updateNetStatus("online", `已连接${NET.labels.join(" + ")}`);
+      }
+    });
+  }
+
+  function handleNetMessage(payload) {
+    if (!payload || payload.from === NET.clientId) return;
+
+    // 同时连接多条中继时同一条消息会到达两次，按消息 ID 去重
+    if (payload.id) {
+      if (NET.seen.has(payload.id)) return;
+      NET.seen.add(payload.id);
+      NET.seenOrder.push(payload.id);
+      if (NET.seenOrder.length > 600) {
+        NET.seen.delete(NET.seenOrder.shift());
+      }
+    }
+
+    NET.lastReceiveAt = performance.now();
+    if (payload.from) NET.peerId = payload.from;
+
+    if (!NET.peerOnline) {
+      NET.peerOnline = true;
+      updateNetStatus("online", "对手已连接");
+      roomHint.textContent = "对手已就位，正在进入战场…";
+      sound.pickup();
+      // 双方都靠"收到对方消息"判定就绪，随后各自进入倒计时
+      window.setTimeout(() => {
+        if (NET.peerOnline && VERSUS.phase === "lobby") startVersusMatch();
+      }, 500);
+    }
+
+    switch (payload.t) {
+      case "hello":
+        netSend({ t: "hello-ack", role: VERSUS.role });
+        break;
+      case "state":
+        applyRemoteState(payload);
+        break;
+      case "fire":
+        spawnRemoteBullet(payload);
+        break;
+      case "hit":
+        applyIncomingHit(payload);
+        break;
+      case "round":
+        resolveVersusRound(payload.w, false);
+        break;
+      case "rematch":
+        if (VERSUS.active && VERSUS.phase === "over") {
+          showMessage("对手发起了再战", 1.6);
+          startVersusMatch();
+        }
+        break;
+      case "ping":
+        netSend({ t: "pong", at: payload.at });
+        break;
+      case "pong":
+        {
+          // 公共中继偶发抖动，取加权平均让读数稳定
+          const sample = Math.max(0, Date.now() - payload.at);
+          NET.latency = NET.latency
+            ? Math.round(NET.latency * 0.7 + sample * 0.3)
+            : sample;
+        }
+        break;
+      case "bye":
+        handlePeerLeft();
+        break;
+      default:
+        break;
+    }
+  }
+
+  function netTick(dt) {
+    if (!NET.connected) return;
+    if (!VERSUS.active && VERSUS.phase !== "lobby") return;
+    const now = performance.now();
+
+    // 大厅阶段持续打招呼，避免后加入的一方错过对方的第一条消息
+    if (!NET.peerOnline && now - NET.lastHelloAt > 1200) {
+      NET.lastHelloAt = now;
+      netSend({ t: "hello", role: VERSUS.role });
+    }
+
+    if (VERSUS.active && NET.peerOnline && now - NET.lastStateAt > 66) {
+      NET.lastStateAt = now;
+      netSend({
+        t: "state",
+        x: Math.round(player.x * 10) / 10,
+        y: Math.round(player.y * 10) / 10,
+        b: Math.round(player.bodyAngle * 100) / 100,
+        a: Math.round(player.turretAngle * 100) / 100,
+        h: Math.max(0, Math.round(player.health)),
+        m: player.maxHealth,
+        o: player.overdrive > 0 ? 1 : 0,
+        s: VERSUS.myScore,
+      });
+    }
+
+    if (NET.peerOnline && now - NET.lastPingAt > 2000) {
+      NET.lastPingAt = now;
+      netSend({ t: "ping", at: Date.now() });
+    }
+
+    if (NET.peerOnline && now - NET.lastReceiveAt > 8000) {
+      handlePeerLeft();
+    }
+  }
+
+  function handlePeerLeft() {
+    if (!VERSUS.active && VERSUS.phase !== "lobby") return;
+    NET.peerOnline = false;
+    NET.peerId = "";
+    VERSUS.active = false;
+    VERSUS.phase = "lobby";
+    VERSUS.myScore = 0;
+    VERSUS.foeScore = 0;
+    VERSUS.round = 1;
+    VERSUS.pendingOver = false;
+    playerCanFire = false;
+    updateNetStatus("online", `已连接${NET.labels.join(" + ")}`);
+    roomHint.textContent = "对手已离开，房间仍然有效，可以把房间码发给新对手。";
+    if (remoteTank) remoteTank.alive = false;
+    showMessage("对手已断开连接", 2.4);
+    // 回到大厅继续等待，房间与中继连接都保留
+    gameState = "lobby";
+    onlineActions.hidden = true;
+    onlineOverlay.classList.add("visible");
+    pauseOverlay.classList.remove("visible");
+    gameOverOverlay.classList.remove("visible");
+    buffOverlay.classList.remove("visible");
+    foeReadout.hidden = true;
+    roomPanel.hidden = false;
+  }
+
+  function createArena(forceIndex = null) {
     obstacles = [];
     scenery = [];
 
@@ -610,10 +1024,14 @@
       ],
     ];
 
-    const nextLayout = Math.floor(Math.random() * layouts.length);
-    arenaLayoutIndex = nextLayout === arenaLayoutIndex
-      ? (nextLayout + 1 + Math.floor(Math.random() * (layouts.length - 1))) % layouts.length
-      : nextLayout;
+    if (Number.isInteger(forceIndex)) {
+      arenaLayoutIndex = ((forceIndex % layouts.length) + layouts.length) % layouts.length;
+    } else {
+      const nextLayout = Math.floor(Math.random() * layouts.length);
+      arenaLayoutIndex = nextLayout === arenaLayoutIndex
+        ? (nextLayout + 1 + Math.floor(Math.random() * (layouts.length - 1))) % layouts.length
+        : nextLayout;
+    }
     obstacles.push(...borderBlocks, ...layouts[arenaLayoutIndex]());
 
     for (let i = 0; i < 94; i += 1) {
@@ -738,6 +1156,23 @@
 
   function beginGame() {
     sound.ensure();
+    netClose();
+    VERSUS.active = false;
+    VERSUS.phase = "idle";
+    VERSUS.role = null;
+    VERSUS.roomCode = "";
+    remoteTank = null;
+    playerCanFire = true;
+    foeReadout.hidden = true;
+    onlineOverlay.classList.remove("visible");
+    setText(waveChipLabel, "波次");
+    setText(scoreChipLabel, "得分");
+    setText(gameOverKicker, "装甲损毁");
+    setText(gameOverTitle, "阵地失守");
+    setText(finalScoreLabel, "最终得分");
+    setText(finalWaveLabel, "抵达波次");
+    setText(finalKillsLabel, "击毁敌军");
+    setText(restartButton, "再次出击");
     resetGame();
     gameState = "playing";
     newRecordBadge.hidden = true;
@@ -751,6 +1186,10 @@
 
   function pauseGame() {
     if (gameState !== "playing") return;
+    if (VERSUS.active) {
+      showMessage("联机对战不支持暂停", 1.4);
+      return;
+    }
     gameState = "paused";
     renderPauseLoadout();
     pauseOverlay.classList.add("visible");
@@ -825,6 +1264,374 @@
     syncSoundUi();
     writeMuted(muted);
     if (!muted) sound.ensure();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 双人对战流程：房间 → 倒计时 → 交火 → 回合结算
+  // ---------------------------------------------------------------------------
+  // 双方按 clientId 排序自动分左右阵营，不需要额外协商
+  function mySide() {
+    if (!NET.peerId) return VERSUS.role === "host" ? "left" : "right";
+    return NET.clientId < NET.peerId ? "left" : "right";
+  }
+
+  function foeSide() {
+    return mySide() === "left" ? "right" : "left";
+  }
+
+  function versusSpawnFor(side) {
+    const preferred = side === "left"
+      ? { x: 250, y: WORLD.height / 2 }
+      : { x: WORLD.width - 250, y: WORLD.height / 2 };
+    if (!tankCollides(preferred.x, preferred.y, 26)) return preferred;
+
+    for (let radius = 60; radius <= 420; radius += 60) {
+      for (let step = 0; step < 12; step += 1) {
+        const angle = (step / 12) * Math.PI * 2;
+        const point = {
+          x: clamp(preferred.x + Math.cos(angle) * radius, 90, WORLD.width - 90),
+          y: clamp(preferred.y + Math.sin(angle) * radius, 90, WORLD.height - 90),
+        };
+        if (!tankCollides(point.x, point.y, 26)) return point;
+      }
+    }
+    return preferred;
+  }
+
+  function createRemoteTank(side) {
+    const spawn = versusSpawnFor(side);
+    return {
+      x: spawn.x,
+      y: spawn.y,
+      targetX: spawn.x,
+      targetY: spawn.y,
+      radius: 24,
+      bodyAngle: 0,
+      turretAngle: 0,
+      targetBody: 0,
+      targetTurret: 0,
+      health: 100,
+      maxHealth: 100,
+      muzzleFlash: 0,
+      hitFlash: 0,
+      elite: false,
+      alive: true,
+      overdrive: false,
+      type: { color: "#d2604a", attackType: "straight", name: "对手" },
+    };
+  }
+
+  function startVersusMatch() {
+    if (!VERSUS.role) return;
+    VERSUS.active = true;
+    VERSUS.myScore = 0;
+    VERSUS.foeScore = 0;
+    VERSUS.round = 1;
+    VERSUS.pendingOver = false;
+    VERSUS.lastWinner = null;
+    gameState = "playing";
+    onlineOverlay.classList.remove("visible");
+    startOverlay.classList.remove("visible");
+    buffOverlay.classList.remove("visible");
+    gameOverOverlay.classList.remove("visible");
+    pauseOverlay.classList.remove("visible");
+    foeReadout.hidden = false;
+    resetVersusRound();
+    sound.wave();
+    showMessage("对战开始 · 先到 3 分获胜", 2.2);
+  }
+
+  function resetVersusRound() {
+    createArena(layoutIndexFromCode(VERSUS.roomCode));
+    player = createPlayer();
+    const mySpawn = versusSpawnFor(mySide());
+    player.x = mySpawn.x;
+    player.y = mySpawn.y;
+    player.invulnerable = 1.2;
+
+    const foeSpawn = versusSpawnFor(foeSide());
+    remoteTank = createRemoteTank(foeSide());
+    remoteTank.x = foeSpawn.x;
+    remoteTank.y = foeSpawn.y;
+    remoteTank.targetX = foeSpawn.x;
+    remoteTank.targetY = foeSpawn.y;
+
+    enemies = [];
+    bullets = [];
+    beams = [];
+    particles = [];
+    pickups = [];
+    spawnQueue = [];
+    intermission = 0;
+    camera.x = player.x;
+    camera.y = player.y;
+    camera.shake = 0;
+
+    VERSUS.phase = "countdown";
+    VERSUS.timer = 3;
+    VERSUS.lastWinner = null;
+    playerCanFire = false;
+
+    createRing(player.x, player.y, 110, COLORS.teal, 0.7, 5);
+    createRing(remoteTank.x, remoteTank.y, 110, "#d2604a", 0.7, 5);
+    updateHud();
+    updateAmmoPips();
+  }
+
+  function updateVersus(dt) {
+    updateRemoteTank(dt);
+
+    if (VERSUS.phase === "countdown") {
+      VERSUS.timer -= dt;
+      setText(waveLabel, "对战准备");
+      setText(waveTimer, Math.max(1, Math.ceil(VERSUS.timer)));
+      if (VERSUS.timer <= 0) {
+        VERSUS.phase = "live";
+        playerCanFire = true;
+        showMessage("开火！", 1);
+        sound.wave();
+      }
+      return;
+    }
+
+    if (VERSUS.phase === "live") {
+      setText(waveLabel, "比分");
+      setText(waveTimer, `${VERSUS.myScore} : ${VERSUS.foeScore}`);
+      // 对手血量归零时本方也自行结算，避免单条消息丢失导致比分不同步
+      if (remoteTank && remoteTank.health <= 0) {
+        resolveVersusRound(mySide(), true);
+      }
+      return;
+    }
+
+    if (VERSUS.phase === "roundEnd") {
+      VERSUS.timer -= dt;
+      setText(
+        waveLabel,
+        VERSUS.lastWinner === mySide() ? "本回合胜利" : "本回合失利"
+      );
+      setText(waveTimer, Math.max(1, Math.ceil(VERSUS.timer)));
+      if (VERSUS.timer <= 0) {
+        if (VERSUS.pendingOver) {
+          endVersusMatch();
+        } else {
+          VERSUS.round += 1;
+          resetVersusRound();
+        }
+      }
+    }
+  }
+
+  function updateRemoteTank(dt) {
+    if (!remoteTank) return;
+    const blend = Math.min(1, 12 * dt);
+    remoteTank.x = lerp(remoteTank.x, remoteTank.targetX, blend);
+    remoteTank.y = lerp(remoteTank.y, remoteTank.targetY, blend);
+    remoteTank.bodyAngle = lerpAngle(remoteTank.bodyAngle, remoteTank.targetBody, blend);
+    remoteTank.turretAngle = lerpAngle(
+      remoteTank.turretAngle,
+      remoteTank.targetTurret,
+      Math.min(1, 18 * dt)
+    );
+    remoteTank.muzzleFlash = Math.max(0, remoteTank.muzzleFlash - dt);
+    remoteTank.hitFlash = Math.max(0, remoteTank.hitFlash - dt);
+  }
+
+  function applyRemoteState(payload) {
+    if (!remoteTank) return;
+    const x = Number(payload.x);
+    const y = Number(payload.y);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      remoteTank.targetX = x;
+      remoteTank.targetY = y;
+    }
+    remoteTank.targetBody = Number(payload.b) || 0;
+    remoteTank.targetTurret = Number(payload.a) || 0;
+    remoteTank.maxHealth = Number(payload.m) || 100;
+    remoteTank.health = clamp(Number(payload.h) || 0, 0, remoteTank.maxHealth);
+    remoteTank.overdrive = Boolean(payload.o);
+    remoteTank.alive = remoteTank.health > 0;
+  }
+
+  function spawnRemoteBullet(payload) {
+    const angle = Number(payload.a) || 0;
+    const speed = clamp(Number(payload.s) || 690, 200, 1200);
+    const originX = Number(payload.x);
+    const originY = Number(payload.y);
+    const x = Number.isFinite(originX) ? originX : remoteTank ? remoteTank.x : player.x;
+    const y = Number.isFinite(originY) ? originY : remoteTank ? remoteTank.y : player.y;
+
+    // 对手的炮弹只做视觉表现，命中判定由开火方本地计算后发 "hit" 通知
+    bullets.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius: 5,
+      damage: 0,
+      owner: "remote",
+      life: 1.8,
+      color: "#ffb07a",
+      glow: "#ffd9b0",
+      behavior: "straight",
+      bounces: 0,
+      homingStrength: 0,
+      homingDuration: 0,
+      explosive: false,
+    });
+    if (remoteTank) remoteTank.muzzleFlash = 0.08;
+    createMuzzleParticles(x, y, angle, "#ffb07a");
+  }
+
+  function versusTargetHit(bullet) {
+    if (!VERSUS.active || !remoteTank || !remoteTank.alive) return false;
+    return (
+      Math.hypot(remoteTank.x - bullet.x, remoteTank.y - bullet.y) <
+      remoteTank.radius + bullet.radius
+    );
+  }
+
+  function hitRemoteTank(damage, angle) {
+    if (!remoteTank || !remoteTank.alive) return;
+    const applied = Math.max(1, Math.round(damage));
+    remoteTank.health = Math.max(0, remoteTank.health - applied);
+    remoteTank.hitFlash = 0.12;
+    remoteTank.x = clamp(
+      remoteTank.x + Math.cos(angle) * 3,
+      remoteTank.radius,
+      WORLD.width - remoteTank.radius
+    );
+    remoteTank.y = clamp(
+      remoteTank.y + Math.sin(angle) * 3,
+      remoteTank.radius,
+      WORLD.height - remoteTank.radius
+    );
+    createBurst(remoteTank.x, remoteTank.y, "#ffb3a2", 6, 110);
+    sound.hit();
+    netSend({ t: "hit", d: applied });
+
+    if (remoteTank.health <= 0) {
+      createExplosion(remoteTank.x, remoteTank.y, "#d2604a", 30);
+      camera.shake = Math.max(camera.shake, 10);
+    }
+  }
+
+  function applyIncomingHit(payload) {
+    if (!VERSUS.active || VERSUS.phase !== "live") return;
+    const damage = clamp(Number(payload.d) || 0, 0, 60);
+    player.health = Math.max(0, player.health - damage);
+    player.hitFlash = 0.18;
+    camera.shake = Math.max(camera.shake, 8);
+    createBurst(player.x, player.y, "#ff9f72", 8, 130);
+    sound.hit();
+
+    if (player.health <= 0) {
+      createExplosion(player.x, player.y, COLORS.player, 30);
+      resolveVersusRound(foeSide(), true);
+    }
+  }
+
+  function resolveVersusRound(winnerSide, broadcast) {
+    if (!VERSUS.active) return;
+    if (VERSUS.phase !== "live") return;
+
+    VERSUS.phase = "roundEnd";
+    VERSUS.timer = 3.2;
+    VERSUS.lastWinner = winnerSide;
+    playerCanFire = false;
+
+    const iWon = winnerSide === mySide();
+    if (iWon) VERSUS.myScore += 1;
+    else VERSUS.foeScore += 1;
+
+    if (broadcast) netSend({ t: "round", w: winnerSide });
+    VERSUS.pendingOver =
+      VERSUS.myScore >= VERSUS.target || VERSUS.foeScore >= VERSUS.target;
+
+    showMessage(iWon ? "本回合胜利" : "本回合失利", 2);
+    sound.explosion();
+  }
+
+  function endVersusMatch() {
+    VERSUS.phase = "over";
+    playerCanFire = false;
+    gameState = "gameover";
+
+    const iWon = VERSUS.myScore > VERSUS.foeScore;
+    setText(gameOverKicker, "对战结束");
+    setText(gameOverTitle, iWon ? "胜利" : "失败");
+    setText(finalScoreLabel, "我方比分");
+    setText(finalWaveLabel, "对手比分");
+    setText(finalKillsLabel, "总回合");
+    setText(finalScore, VERSUS.myScore);
+    setText(finalWave, VERSUS.foeScore);
+    setText(finalKills, VERSUS.round);
+    setText(restartButton, "再来一局");
+    newRecordBadge.hidden = true;
+
+    gameOverOverlay.classList.add("visible");
+    sound.wave();
+  }
+
+  function showOnlineLobby() {
+    gameState = "lobby";
+    VERSUS.active = false;
+    VERSUS.phase = "lobby";
+    VERSUS.role = null;
+    VERSUS.roomCode = "";
+    playerCanFire = true;
+    remoteTank = null;
+    foeReadout.hidden = true;
+
+    onlineActions.hidden = false;
+    roomPanel.hidden = true;
+    roomCodeText.textContent = "------";
+    roomCodeInput.value = "";
+    onlineStatus.textContent = "创建房间后把房间码发给朋友，对方输入房间码即可加入。";
+    updateNetStatus("", "未连接");
+    setText(netLatency, "");
+
+    startOverlay.classList.remove("visible");
+    onlineOverlay.classList.add("visible");
+    sound.ensure();
+  }
+
+  function startHosting() {
+    const code = makeRoomCode();
+    if (!netStart("host", code)) return;
+    onlineStatus.textContent = "把下面的房间码发给朋友，对方加入后会自动开战。";
+  }
+
+  function joinRoomByCode() {
+    const code = roomCodeInput.value
+      .trim()
+      .toUpperCase()
+      .replace(/[^0-9A-Z]/g, "");
+    roomCodeInput.value = code;
+    if (code.length !== 6) {
+      onlineStatus.textContent = "房间码是 6 位字符，请检查后重新输入。";
+      sound.hit();
+      roomCodeInput.focus();
+      return;
+    }
+    if (!netStart("guest", code)) return;
+    onlineStatus.textContent = "正在加入房间，请稍候…";
+  }
+
+  function leaveOnlineLobby() {
+    netClose();
+    VERSUS.active = false;
+    VERSUS.phase = "idle";
+    VERSUS.role = null;
+    VERSUS.roomCode = "";
+    playerCanFire = true;
+    remoteTank = null;
+    foeReadout.hidden = true;
+    onlineOverlay.classList.remove("visible");
+    startOverlay.classList.add("visible");
+    gameState = "menu";
+    resetGame();
+    renderBestRecord();
   }
 
   function showMessage(text, duration = 1.4) {
@@ -1191,7 +1998,7 @@
     }
 
     const wantsToFire = pointer.down || keys.has("KeyJ") || (aimStick.active && Math.hypot(aimStick.x, aimStick.y) > 0.42);
-    if (wantsToFire) firePlayerCannon();
+    if (wantsToFire && playerCanFire) firePlayerCannon();
 
     if (player.auxLaserLevel > 0) {
       player.auxLaserTimer -= dt;
@@ -1228,6 +2035,9 @@
       lastAngle = angle;
       muzzleX = player.x + Math.cos(angle) * (player.radius + 19);
       muzzleY = player.y + Math.sin(angle) * (player.radius + 19);
+      if (VERSUS.active) {
+        netSend({ t: "fire", x: muzzleX, y: muzzleY, a: angle, s: speed });
+      }
       bullets.push({
         x: muzzleX,
         y: muzzleY,
@@ -1236,7 +2046,8 @@
         radius: 5 + player.bulletRadiusBonus,
         damage: baseDamage * player.damageMultiplier,
         owner: "player",
-        life: 1.65,
+        // 对战地图双方出生点相距较远，子弹需要更长的飞行时间才够得着
+        life: VERSUS.active ? 2.6 : 1.65,
         color: COLORS.bullet,
         glow: "#fff1b2",
         behavior: player.homingShots > 0 ? "homing" : "straight",
@@ -1343,12 +2154,27 @@
     sound.shockwave();
 
     bullets = bullets.filter((bullet) => {
-      if (bullet.owner === "enemy" && distance(bullet, player) < clearRadius) {
+      const incoming =
+        bullet.owner === "enemy" || (VERSUS.active && bullet.owner === "remote");
+      if (incoming && distance(bullet, player) < clearRadius) {
         createBurst(bullet.x, bullet.y, "#d9fff9", 4, 90);
         return false;
       }
       return true;
     });
+
+    if (VERSUS.active && remoteTank && remoteTank.alive) {
+      const foeDistance = distance(remoteTank, player);
+      if (foeDistance < clearRadius) {
+        const foeAngle = Math.atan2(remoteTank.y - player.y, remoteTank.x - player.x);
+        const foeDamage = Math.round(
+          34 *
+            player.shockwaveDamageMultiplier *
+            (1 - foeDistance / (clearRadius + 70))
+        );
+        if (foeDamage > 0) hitRemoteTank(foeDamage, foeAngle);
+      }
+    }
 
     enemies.forEach((enemy) => {
       const dist = distance(enemy, player);
@@ -1648,19 +2474,27 @@
         }
 
         if (bullet.owner === "player") {
-          const enemy = enemies.find((candidate) =>
-            candidate.spawnTimer <= 0 &&
-            Math.hypot(candidate.x - bullet.x, candidate.y - bullet.y) < candidate.radius + bullet.radius
-          );
-          if (enemy) {
+          if (versusTargetHit(bullet)) {
             const angle = Math.atan2(bullet.vy, bullet.vx);
-            damageEnemy(enemy, bullet.damage, angle, 105);
-            if (bullet.explosive) {
-              detonatePlayerBullet(bullet, enemy);
-            }
+            hitRemoteTank(bullet.damage, angle);
+            if (bullet.explosive) detonatePlayerBullet(bullet);
             dead = true;
+          } else {
+            const enemy = enemies.find((candidate) =>
+              candidate.spawnTimer <= 0 &&
+              Math.hypot(candidate.x - bullet.x, candidate.y - bullet.y) < candidate.radius + bullet.radius
+            );
+            if (enemy) {
+              const angle = Math.atan2(bullet.vy, bullet.vx);
+              damageEnemy(enemy, bullet.damage, angle, 105);
+              if (bullet.explosive) {
+                detonatePlayerBullet(bullet, enemy);
+              }
+              dead = true;
+            }
           }
         } else if (
+          !VERSUS.active &&
           player.invulnerable <= 0 &&
           Math.hypot(player.x - bullet.x, player.y - bullet.y) < player.radius + bullet.radius
         ) {
@@ -1929,6 +2763,29 @@
     setBarWidth(healthBar, healthPercent);
     setText(energyText, `${Math.floor(energyPercent * 100)}%`);
     setBarWidth(energyBar, energyPercent);
+
+    if (VERSUS.active) {
+      setText(waveChipLabel, "比分");
+      setText(scoreChipLabel, "回合");
+      setText(waveValue, `${VERSUS.myScore}:${VERSUS.foeScore}`);
+      setText(scoreValue, String(VERSUS.round).padStart(2, "0"));
+      setText(difficultyLabel, `先到 ${VERSUS.target} 分获胜`);
+      setText(
+        buffCountLabel,
+        `${VERSUS.role === "host" ? "房主" : "加入方"} · ${NET.latency}ms`
+      );
+      const foeRatio = remoteTank
+        ? clamp(remoteTank.health / remoteTank.maxHealth, 0, 1)
+        : 0;
+      setText(foeHealthText, remoteTank ? Math.ceil(remoteTank.health) : 0);
+      setBarWidth(foeHealthBar, foeRatio);
+      setDisabled(
+        specialButton,
+        energyPercent < 1 || gameState !== "playing" || !playerCanFire
+      );
+      return;
+    }
+
     const displayedWave = Math.max(1, wave);
     setText(waveValue, String(displayedWave).padStart(2, "0"));
     setText(scoreValue, formatScore(score));
@@ -1975,13 +2832,18 @@
   function update(dt) {
     elapsed += dt;
     updateMessage(dt);
-    updateWave(dt);
+    if (VERSUS.active) {
+      updateVersus(dt);
+    } else {
+      updateWave(dt);
+      updateEnemies(dt);
+    }
     updatePlayer(dt);
-    updateEnemies(dt);
     updateBullets(dt);
     updatePickups(dt);
     updateParticles(dt);
     updateBeams(dt);
+    netTick(dt);
     updateCamera(dt);
     updateHud();
     updateAmmoPips();
@@ -2336,14 +3198,23 @@
   }
 
   function drawOffscreenIndicators() {
-    if (enemies.length === 0) return;
+    const targets = enemies.map((enemy) => ({
+      x: enemy.x,
+      y: enemy.y,
+      color: enemy.type.color,
+    }));
+    if (VERSUS.active && remoteTank && remoteTank.health > 0) {
+      targets.push({ x: remoteTank.x, y: remoteTank.y, color: "#ff8b64" });
+    }
+    if (targets.length === 0) return;
+
     const margin = 34;
 
-    enemies.forEach((enemy) => {
-      const screen = worldToScreen(enemy.x, enemy.y);
+    targets.forEach((target) => {
+      const screen = worldToScreen(target.x, target.y);
       if (screen.x > 24 && screen.x < view.width - 24 && screen.y > 24 && screen.y < view.height - 24) return;
 
-      const angle = Math.atan2(enemy.y - player.y, enemy.x - player.x);
+      const angle = Math.atan2(target.y - player.y, target.x - player.x);
       const radiusX = view.width / 2 - margin;
       const radiusY = view.height / 2 - margin;
       const scale = Math.min(
@@ -2356,7 +3227,7 @@
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(angle);
-      ctx.fillStyle = enemy.type.color;
+      ctx.fillStyle = target.color;
       ctx.globalAlpha = 0.85;
       ctx.beginPath();
       ctx.moveTo(10, 0);
@@ -2425,7 +3296,11 @@
       }
     });
 
-    if (gameState !== "gameover") drawTank(player, true);
+    if (VERSUS.active && remoteTank && remoteTank.health > 0) {
+      drawTank(remoteTank, false);
+    }
+
+    if (gameState !== "gameover" && player.health > 0) drawTank(player, true);
     drawBullets();
     drawBeams();
     drawParticles();
@@ -2446,6 +3321,8 @@
     } else {
       updateParticles(dt * 0.4);
       updateBeams(dt * 0.4);
+      // 大厅阶段也要跑联机心跳，才能发现对手加入
+      netTick(dt);
       updateCamera(dt);
     }
     draw();
@@ -2543,9 +3420,29 @@
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
     startButton.addEventListener("click", beginGame);
-    restartButton.addEventListener("click", beginGame);
+    restartButton.addEventListener("click", () => {
+      if (VERSUS.active) {
+        netSend({ t: "rematch" });
+        startVersusMatch();
+      } else {
+        beginGame();
+      }
+    });
     restartFromPause.addEventListener("click", beginGame);
     resumeButton.addEventListener("click", resumeGame);
+    onlineButton.addEventListener("click", showOnlineLobby);
+    createRoomButton.addEventListener("click", startHosting);
+    joinRoomButton.addEventListener("click", joinRoomByCode);
+    leaveOnlineButton.addEventListener("click", leaveOnlineLobby);
+    roomCodeInput.addEventListener("input", () => {
+      roomCodeInput.value = roomCodeInput.value.toUpperCase().replace(/[^0-9A-Z]/g, "");
+    });
+    roomCodeInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        joinRoomByCode();
+      }
+    });
     buffCards.addEventListener("click", (event) => {
       const card = event.target.closest(".buff-card");
       if (!card) return;
@@ -2577,6 +3474,9 @@
     });
 
     window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("beforeunload", () => {
+      if (VERSUS.active) netSend({ t: "bye" });
+    });
     if ("ResizeObserver" in window) {
       new ResizeObserver(resizeCanvas).observe(arena);
     }
