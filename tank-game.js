@@ -37,6 +37,13 @@
   const moveKnob = document.getElementById("moveKnob");
   const aimPad = document.getElementById("aimPad");
   const aimKnob = document.getElementById("aimKnob");
+  const soundButton = document.getElementById("soundButton");
+  const recordStrip = document.getElementById("recordStrip");
+  const recordScore = document.getElementById("recordScore");
+  const recordWave = document.getElementById("recordWave");
+  const newRecordBadge = document.getElementById("newRecordBadge");
+  const pauseLoadout = document.getElementById("pauseLoadout");
+  const pauseLoadoutList = document.getElementById("pauseLoadoutList");
 
   const WORLD = { width: 2400, height: 1600 };
   const COLORS = {
@@ -54,6 +61,7 @@
     steelLight: "#82908a",
     rubble: "#544e42",
     bullet: "#ffe07d",
+    teal: "#79e2d3",
   };
 
   const ENEMY_TYPES = {
@@ -339,6 +347,78 @@
   let elapsed = 0;
   let audioContext = null;
 
+  const STORAGE_KEYS = {
+    best: "tank-game:best-record",
+    muted: "tank-game:muted",
+  };
+  const EMPTY_RECORD = { score: 0, wave: 0, kills: 0 };
+  const textCache = new WeakMap();
+  const widthCache = new WeakMap();
+  const disabledCache = new WeakMap();
+  const ammoPipState = { size: -1, magazine: -1, reloading: null };
+  let bestRecord = readRecord();
+  let soundMuted = readMuted();
+
+  function readRecord() {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEYS.best);
+      if (!raw) return { ...EMPTY_RECORD };
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return { ...EMPTY_RECORD };
+      return {
+        score: Number(parsed.score) || 0,
+        wave: Number(parsed.wave) || 0,
+        kills: Number(parsed.kills) || 0,
+      };
+    } catch (error) {
+      return { ...EMPTY_RECORD };
+    }
+  }
+
+  function writeRecord(record) {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.best, JSON.stringify(record));
+    } catch (error) {
+      // 隐私模式或存储被禁用时静默跳过，不影响游戏进行。
+    }
+  }
+
+  function readMuted() {
+    try {
+      return window.localStorage.getItem(STORAGE_KEYS.muted) === "1";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function writeMuted(muted) {
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.muted, muted ? "1" : "0");
+    } catch (error) {
+      // 同上，存储不可用时仅本次会话生效。
+    }
+  }
+
+  function setText(element, value) {
+    const text = String(value);
+    if (!element || textCache.get(element) === text) return;
+    textCache.set(element, text);
+    element.textContent = text;
+  }
+
+  function setBarWidth(element, ratio) {
+    const percent = clamp(ratio, 0, 1) * 100;
+    if (!element || widthCache.get(element) === percent) return;
+    widthCache.set(element, percent);
+    element.style.width = `${percent}%`;
+  }
+
+  function setDisabled(element, disabled) {
+    if (!element || disabledCache.get(element) === disabled) return;
+    disabledCache.set(element, disabled);
+    element.disabled = disabled;
+  }
+
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
@@ -380,7 +460,12 @@
   }
 
   class Sound {
+    constructor() {
+      this.muted = false;
+    }
+
     ensure() {
+      if (this.muted) return;
       if (!audioContext) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (AudioContext) audioContext = new AudioContext();
@@ -391,7 +476,7 @@
     }
 
     tone(frequency, duration, type = "sine", volume = 0.035, endFrequency = null) {
-      if (!audioContext) return;
+      if (!audioContext || this.muted) return;
       const now = audioContext.currentTime;
       const oscillator = audioContext.createOscillator();
       const gain = audioContext.createGain();
@@ -655,6 +740,7 @@
     sound.ensure();
     resetGame();
     gameState = "playing";
+    newRecordBadge.hidden = true;
     startOverlay.classList.remove("visible");
     buffOverlay.classList.remove("visible");
     pauseOverlay.classList.remove("visible");
@@ -666,6 +752,7 @@
   function pauseGame() {
     if (gameState !== "playing") return;
     gameState = "paused";
+    renderPauseLoadout();
     pauseOverlay.classList.add("visible");
     pointer.down = false;
     keys.clear();
@@ -682,11 +769,62 @@
   function endGame() {
     gameState = "gameover";
     pointer.down = false;
-    finalScore.textContent = formatScore(score);
-    finalWave.textContent = String(Math.max(1, wave));
-    finalKills.textContent = String(kills);
+    const reachedWave = Math.max(1, wave);
+    setText(finalScore, formatScore(score));
+    setText(finalWave, reachedWave);
+    setText(finalKills, kills);
+
+    const isNewRecord = score > bestRecord.score;
+    if (isNewRecord) {
+      bestRecord = { score, wave: reachedWave, kills };
+      writeRecord(bestRecord);
+    }
+    newRecordBadge.hidden = !isNewRecord;
+    renderBestRecord();
+
     gameOverOverlay.classList.add("visible");
     sound.explosion();
+  }
+
+  function renderBestRecord() {
+    const hasRecord = bestRecord.score > 0;
+    recordStrip.hidden = !hasRecord;
+    if (!hasRecord) return;
+    setText(recordScore, formatScore(bestRecord.score));
+    setText(recordWave, bestRecord.wave);
+  }
+
+  function renderPauseLoadout() {
+    if (!player) {
+      pauseLoadout.hidden = true;
+      return;
+    }
+    const owned = BUFFS.filter((buff) => player.buffLevels[buff.id] > 0);
+    pauseLoadout.hidden = owned.length === 0;
+    pauseLoadoutList.innerHTML = owned
+      .map((buff) => {
+        const level = player.buffLevels[buff.id];
+        const levelTag = level > 1 ? `<em>×${level}</em>` : "";
+        return `<span class="loadout-chip" title="${buff.description}"><i>${buff.icon}</i>${buff.name}${levelTag}</span>`;
+      })
+      .join("");
+  }
+
+  function syncSoundUi() {
+    soundButton.classList.toggle("muted", soundMuted);
+    soundButton.setAttribute("aria-pressed", soundMuted ? "false" : "true");
+    soundButton.setAttribute(
+      "aria-label",
+      soundMuted ? "音效已关闭，点击开启" : "音效已开启，点击关闭"
+    );
+  }
+
+  function setSoundMuted(muted) {
+    soundMuted = muted;
+    sound.muted = muted;
+    syncSoundUi();
+    writeMuted(muted);
+    if (!muted) sound.ensure();
   }
 
   function showMessage(text, duration = 1.4) {
@@ -733,8 +871,8 @@
     pointer.down = false;
     keys.clear();
     pendingBuffChoices = rollBuffs(3);
-    waveLabel.textContent = "区域肃清";
-    waveTimer.textContent = "BUFF";
+    setText(waveLabel, "区域肃清");
+    setText(waveTimer, "BUFF");
     buffSummary.textContent = `第 ${wave} 波已肃清，选择下一轮作战增益。`;
     buffCards.innerHTML = pendingBuffChoices
       .map(
@@ -943,9 +1081,9 @@
 
     spawnQueue.sort((a, b) => a.time - b.time);
     spawnClock = 0;
-    waveLabel.textContent = `第 ${wave} 波`;
-    waveTimer.textContent = String(spawnQueue.length).padStart(2, "0");
-    difficultyLabel.textContent = `威胁 x${difficulty.multiplier.toFixed(1)}`;
+    setText(waveLabel, `第 ${wave} 波`);
+    setText(waveTimer, String(spawnQueue.length).padStart(2, "0"));
+    setText(difficultyLabel, `威胁 x${difficulty.multiplier.toFixed(1)}`);
     const weaponIntel =
       wave === 3
         ? " · 弹跳炮入场"
@@ -970,8 +1108,8 @@
   function updateWave(dt) {
     if (intermission > 0) {
       intermission -= dt;
-      waveLabel.textContent = "准备迎战";
-      waveTimer.textContent = String(Math.max(1, Math.ceil(intermission)));
+      setText(waveLabel, "准备迎战");
+      setText(waveTimer, Math.max(1, Math.ceil(intermission)));
       if (intermission <= 0) startWave();
       return;
     }
@@ -982,7 +1120,7 @@
       spawnEnemy(next.type);
     }
 
-    waveTimer.textContent = String(spawnQueue.length + enemies.length).padStart(2, "0");
+    setText(waveTimer, String(spawnQueue.length + enemies.length).padStart(2, "0"));
 
     if (!spawnQueue.length && !enemies.length) {
       const difficulty = getDifficulty(wave);
@@ -1787,29 +1925,51 @@
   function updateHud() {
     const healthPercent = clamp(player ? player.health / player.maxHealth : 0, 0, 1);
     const energyPercent = clamp(player ? player.energy / player.maxEnergy : 0, 0, 1);
-    healthText.textContent = String(Math.ceil(player ? player.health : 0));
-    healthBar.style.width = `${healthPercent * 100}%`;
-    energyText.textContent = `${Math.floor(energyPercent * 100)}%`;
-    energyBar.style.width = `${energyPercent * 100}%`;
+    setText(healthText, Math.ceil(player ? player.health : 0));
+    setBarWidth(healthBar, healthPercent);
+    setText(energyText, `${Math.floor(energyPercent * 100)}%`);
+    setBarWidth(energyBar, energyPercent);
     const displayedWave = Math.max(1, wave);
-    waveValue.textContent = String(displayedWave).padStart(2, "0");
-    scoreValue.textContent = formatScore(score);
-    difficultyLabel.textContent = `威胁 x${getDifficulty(displayedWave).multiplier.toFixed(1)}`;
-    buffCountLabel.textContent = `强化 ${player ? player.buffCount : 0}`;
-    specialButton.disabled = energyPercent < 1 || gameState !== "playing";
+    setText(waveValue, String(displayedWave).padStart(2, "0"));
+    setText(scoreValue, formatScore(score));
+    setText(difficultyLabel, `威胁 x${getDifficulty(displayedWave).multiplier.toFixed(1)}`);
+    setText(buffCountLabel, `强化 ${player ? player.buffCount : 0}`);
+    setDisabled(specialButton, energyPercent < 1 || gameState !== "playing");
   }
 
   function updateAmmoPips() {
     if (!player) {
       ammoPips.innerHTML = "";
+      ammoPipState.size = -1;
+      ammoPipState.magazine = -1;
+      ammoPipState.reloading = null;
       return;
     }
-    let markup = "";
-    for (let i = 0; i < player.magazineSize; i += 1) {
-      markup += `<span class="ammo-pip${i < player.magazine ? " active" : ""}"></span>`;
+
+    if (ammoPipState.size !== player.magazineSize) {
+      let markup = "";
+      for (let i = 0; i < player.magazineSize; i += 1) {
+        markup += '<span class="ammo-pip"></span>';
+      }
+      ammoPips.innerHTML = markup;
+      ammoPipState.size = player.magazineSize;
+      ammoPipState.magazine = -1;
+      ammoPipState.reloading = null;
     }
-    ammoPips.innerHTML = markup;
-    reloadText.textContent = player.reloadTimer > 0 ? "装填" : "弹药";
+
+    if (ammoPipState.magazine !== player.magazine) {
+      const pips = ammoPips.children;
+      for (let i = 0; i < pips.length; i += 1) {
+        pips[i].classList.toggle("active", i < player.magazine);
+      }
+      ammoPipState.magazine = player.magazine;
+    }
+
+    const reloading = player.reloadTimer > 0;
+    if (ammoPipState.reloading !== reloading) {
+      setText(reloadText, reloading ? "装填" : "弹药");
+      ammoPipState.reloading = reloading;
+    }
   }
 
   function update(dt) {
@@ -2395,6 +2555,9 @@
       if (gameState === "playing") pauseGame();
       else if (gameState === "paused") resumeGame();
     });
+    soundButton.addEventListener("click", () => {
+      setSoundMuted(!soundMuted);
+    });
     specialButton.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       useShockwave();
@@ -2423,6 +2586,9 @@
   player = createPlayer();
   bindInputs();
   resizeCanvas();
+  sound.muted = soundMuted;
+  syncSoundUi();
+  renderBestRecord();
   updateAmmoPips();
   updateHud();
   requestAnimationFrame(frame);
